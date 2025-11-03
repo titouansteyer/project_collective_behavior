@@ -47,3 +47,11 @@ In the first phase, we will:
 - **Report 1**: 2025-11-16  
 - **Report 2**: 2025-12-07
 - **Final Report**: 2026-01-11
+
+## Installation
+git clone https://github.com/titouansteyer/project_collective_behavior.git
+cd project_collective_behavior
+
+
+## Run
+python3 main.py
