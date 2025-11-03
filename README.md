@@ -8,9 +8,17 @@ We use as a starting point the paper:
 *Predator–prey survival pressure is sufficient to evolve swarming behaviors*  
 New Journal of Physics, 25 (2023) 093024  (https://iopscience.iop.org/article/10.1088/1367-2630/acf33a)
 
+## Summary
+This paper explores how complex collective behaviors such as flocking and swirling can emerge purely from survival dynamics, without any predefined social rules.
+Li et al. (2023) propose a minimal predator–prey co-evolution framework using multi-agent reinforcement learning (MARL).
+Agents (predators and prey) receive only a simple survival-based reward: predators gain +1 when catching prey, and prey receive −1 when caught.
+Despite this minimal setup, the system naturally evolves rich emergent behaviors — prey develop cohesive flocking and swirling, while predators exhibit dispersion tactics, confusion effects, and edge predation.
+The authors measure these phenomena using quantitative metrics such as the Degree of Sparsity (DoS) and Degree of Alignment (DoA), showing that survival pressure alone is sufficient to produce coordinated group motion.
+This framework provides valuable insights into the evolution of collective animal behavior and offers a foundation for swarm robotics research.
+
 ## Team Members
--  Rafaëlle Lacraz [rafaellelac] (GitHubUsername)
--  Titouan Steyer [titouansteyer] (GiHhubUsername)
+-  Rafaëlle Lacraz [rafaellelac](https://github.com/rafaellelac)
+-  Titouan Steyer [titouansteyer](https://github.com/titouansteyer)
 
 ##  Project Plan
 ### **Milestone 1 — First Report**
