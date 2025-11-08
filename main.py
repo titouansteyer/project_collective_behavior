@@ -17,17 +17,17 @@ DoA_values = []
 
 # --- Simulation loop ---
 for t in range(N_STEPS):
-    # Random movement (for baseline)
+    # Random movement
     predator_actions = np.random.uniform(-1, 1, (env.n_predators, 2))
     prey_actions = np.random.uniform(-1, 1, (env.n_prey, 2))
 
     (prey_pos, pred_pos), (r_pred, r_prey) = env.step(predator_actions, prey_actions)
 
-    # Combine prey + predator positions & velocities
+    #prey + predator positions & velocities
     all_pos = np.vstack((prey_pos, pred_pos))
     all_vel = np.vstack((prey_actions, predator_actions))
 
-    # Compute metrics
+    #metrics
     dos = degree_of_sparsity(all_pos)
     doa = degree_of_alignment(all_vel)
 
@@ -36,7 +36,7 @@ for t in range(N_STEPS):
 
     print(f"Step {t:03d}: DoS={dos:.3f}, DoA={doa:.3f}, Predator reward={r_pred.sum():.2f}")
 
-# --- Plot results ---
+
 plt.plot(DoS_values, label="Degree of Sparsity (DoS)", color='blue')
 plt.plot(DoA_values, label="Degree of Alignment (DoA)", color='orange')
 plt.xlabel("Timestep")
@@ -44,7 +44,6 @@ plt.ylabel("Metric value")
 plt.title("Evolution of Collective Metrics over Time (Baseline)")
 plt.legend()
 plt.grid(True)
-plt.tight_layout()
 plt.show()
 
 
