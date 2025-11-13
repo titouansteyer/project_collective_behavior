@@ -5,7 +5,7 @@ from maddpg import MADDPGAgent
 from env import PredatorPreyEnv
 
 # ============================================================
-# 🔹 Configuration
+# Configuration
 # ============================================================
 
 EPISODES = 500
@@ -18,7 +18,7 @@ ACTION_DIM = 2   # [ax, ay]
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ============================================================
-# 🔹 Initialisation
+# Initialisation
 # ============================================================
 
 env = PredatorPreyEnv(n_predators=N_PREDATORS, n_preys=N_PREYS)
@@ -28,7 +28,7 @@ rewards_history = []
 DoS_values, DoA_values = [], []
 
 # ============================================================
-# 🔹 Boucle d'entraînement
+# Boucle d'entraînement
 # ============================================================
 
 for episode in range(EPISODES):
@@ -55,15 +55,15 @@ for episode in range(EPISODES):
     print(f"Episode {episode:03d} | Total Reward: {total_reward:.2f} | DoS={DoS_values[-1]:.3f}, DoA={DoA_values[-1]:.3f}")
 
 # ============================================================
-# 🔹 Sauvegarde du modèle
+# Sauvegarde du modèle
 # ============================================================
 
 for i, actor in enumerate(agent.actors):
     torch.save(actor.state_dict(), f"models/actor_predator_{i}.pth")
-print("✅ Models saved in /models")
+print("Models saved in /models")
 
 # ============================================================
-# 🔹 Tracés
+# Tracés
 # ============================================================
 
 plt.figure(figsize=(10, 5))
