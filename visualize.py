@@ -1,127 +1,89 @@
 import pygame
 import numpy as np
-import imageio
-import os
+import imageio.v2 as imageio
+import torch
+
 from env import PredatorPreyEnv
-import cv2
-import imageio.v3 as iio
+from maddpg import MADDPGAgent
 
-# --- PARAMÈTRES GÉNÉRAUX ---
 WIDTH, HEIGHT = 800, 800
-WORLD_SIZE = 7
-SCALE = WIDTH / WORLD_SIZE
 FPS = 60
-N_STEPS = 1500
-OUTPUT_VIDEO = "simulation_couzin.mp4"
+N_STEPS = 600
+OUTPUT_VIDEO = "simulation_fixed.mp4"
 
-# --- CRÉER DOSSIER TEMPORAIRE ---
-os.makedirs("frames", exist_ok=True)
+STATE_DIM = 6
+ACTION_DIM = 2
+ACTION_SCALE = 0.3
 
-# --- INITIALISATION PYGAME ---
 pygame.init()
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Predator–Prey Simulation (Couzin Model)")
+screen = pygame.display.set_mode((WIDTH, HEIGHT), depth=32)
 clock = pygame.time.Clock()
 
-# --- COULEURS ---
-WHITE = (255, 255, 255)
-LIGHT_GRID = (220, 220, 220)
-DARK_GRID = (180, 180, 180)
-GREEN = (0, 255, 0)
-RED = (255, 0, 0)
-BLACK = (0, 0, 0)
-
-# --- ENVIRONNEMENT ---
 env = PredatorPreyEnv()
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+agent = MADDPGAgent(STATE_DIM, ACTION_DIM, env.n_predators, device=device)
 
-# --- FONCTIONS ---
-def draw_grid():
-    for x in range(0, WIDTH, 50):
-        pygame.draw.line(screen, LIGHT_GRID, (x, 0), (x, HEIGHT))
-    for y in range(0, HEIGHT, 50):
-        pygame.draw.line(screen, LIGHT_GRID, (0, y), (WIDTH, y))
-    for x in range(0, WIDTH, 100):
-        pygame.draw.line(screen, DARK_GRID, (x, 0), (x, HEIGHT))
-    for y in range(0, HEIGHT, 100):
-        pygame.draw.line(screen, DARK_GRID, (0, y), (WIDTH, y))
+# Chargement des modèles entraînés
+for i in range(env.n_predators):
+    agent.actors[i].load_state_dict(
+        torch.load(f"models/actor_predator_{i}.pth", map_location=device)
+    )
+    agent.actors[i].eval()
 
-def draw_agents(prey_pos, pred_pos):
-    # Draw prey with heading (nose)
-    for i, (x, y) in enumerate(prey_pos):
-        px = int(x * SCALE)
-        py = int(y * SCALE)
-        pygame.draw.circle(screen, GREEN, (px, py), 5)
-        # Draw heading line if velocity available
-        try:
-            v = env.prey_velocities[i]
-            heading = np.arctan2(v[1], v[0])
-            line_length = 12  # pixels
-            end_x = int(px + line_length * np.cos(heading))
-            end_y = int(py + line_length * np.sin(heading))
-            pygame.draw.line(screen, (0, 0, 0), (px, py), (end_x, end_y), 2)
-        except Exception:
-            # If velocities aren't present or indexing fails, skip heading
-            pass
+def world_to_px(pos):
+    x, y = pos
+    px = int(x * (WIDTH / env.world_size))
+    py = int(HEIGHT - y * (HEIGHT / env.world_size))
+    return px, py
 
-    # Draw predators with heading (nose)
-    for i, (x, y) in enumerate(pred_pos):
-        px = int(x * SCALE)
-        py = int(y * SCALE)
-        pygame.draw.circle(screen, RED, (px, py), 7)
-        try:
-            v = env.predator_velocities[i]
-            heading = np.arctan2(v[1], v[0])
-            line_length = 15  # predators slightly longer
-            end_x = int(px + line_length * np.cos(heading))
-            end_y = int(py + line_length * np.sin(heading))
-            pygame.draw.line(screen, (0, 0, 0), (px, py), (end_x, end_y), 2)
-        except Exception:
-            pass
+def draw_all():
+    screen.fill((255, 255, 255))
 
-def draw_info(step):
-    font = pygame.font.Font(None, 30)
-    text = font.render(f"Step: {step}/{N_STEPS}", True, BLACK)
-    screen.blit(text, (10, 10))
+    # proies
+    for i,(x,y) in enumerate(env.prey_pos):
+        px,py = world_to_px((x,y))
+        color = (0,200,0) if env.prey_alive[i] else (150,150,150)
+        pygame.draw.circle(screen, color, (px,py), 4)
 
-print(f"Recording {N_STEPS} steps...")
+    # prédateurs
+    for (x,y) in env.pred_pos:
+        px,py = world_to_px((x,y))
+        pygame.draw.circle(screen, (220,0,0), (px,py), 6)
 
-for step in range(N_STEPS):
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            exit()
+obs = env.reset()
 
-    # Mise à jour de la simulation
-    (prey_pos, pred_pos), _ = env.step()
-
-    # Rendu visuel
-    screen.fill(WHITE)
-    draw_grid()
-    draw_agents(prey_pos, pred_pos)
-    draw_info(step)
-    pygame.display.flip()
-
-    # Sauvegarde image
-    frame_path = f"frames/frame_{step:04d}.png"
-    pygame.image.save(screen, frame_path)
-
-    clock.tick(FPS)
-
-# --- CONSTRUCTION VIDÉO ---
-print("Assembling frames into video...")
-with imageio.get_writer(OUTPUT_VIDEO, fps=30, codec='libx264') as writer:
+with imageio.get_writer(OUTPUT_VIDEO, fps=30, codec="libx264") as writer:
     for step in range(N_STEPS):
-        frame_path = f"frames/frame_{step:04d}.png"
-        # Lecture avec cv2 pour éviter les erreurs de format
-        image = cv2.imread(frame_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        writer.append_data(image)
 
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                raise SystemExit
 
-# Nettoyage (optionnel)
-for file in os.listdir("frames"):
-    os.remove(os.path.join("frames", file))
-os.rmdir("frames")
+        # actions RL
+        actions = np.zeros((env.n_predators, 2))
+        for i in range(env.n_predators):
+            state_t = torch.FloatTensor(obs[i]).unsqueeze(0).to(device)
+            with torch.no_grad():
+                a = agent.actors[i](state_t).cpu().numpy()[0]
+            actions[i] = ACTION_SCALE * a
+
+        obs, rewards, done, metrics = env.step(actions)
+
+        draw_all()
+        pygame.display.flip()
+
+        # -------------------------------
+        #  LECTURE D’ÉCRAN **SANS BUG**
+        # -------------------------------
+        arr = pygame.surfarray.pixels3d(screen)   # (W, H, 3)
+        frame = np.transpose(arr, (1, 0, 2))      # (H, W, 3)
+
+        frame = np.array(frame, dtype=np.uint8, copy=True)  # COPIE CONTIGUË OK
+
+        writer.append_data(frame)
+
+        clock.tick(FPS)
 
 pygame.quit()
-print(f"Video saved as {OUTPUT_VIDEO}")
+print("Vidéo enregistrée :", OUTPUT_VIDEO)
