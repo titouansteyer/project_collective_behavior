@@ -62,13 +62,33 @@ for step in range(N_STEPS):
     # === DRAW ===
     screen.fill((255, 255, 255))
 
-    # Proies
-    for x, y in env.prey_pos:
-        pygame.draw.circle(screen, (0, 200, 0), w2p((x, y)), 4)
+    # ----- Proies -----
+    for i, (x, y) in enumerate(env.prey_pos):
+        px, py = w2p((x, y))
+        pygame.draw.circle(screen, (0, 200, 0), (px, py), 4)
 
-    # Prédateurs
-    for x, y in env.pred_pos:
-        pygame.draw.circle(screen, (220, 0, 0), w2p((x, y)), 7)
+        # "nez" = direction de la vitesse
+        v = env.prey_vel[i]
+        if np.linalg.norm(v) > 1e-6:
+            heading = np.arctan2(v[1], v[0])
+            L = 12  # longueur du nez en pixels
+            end_x = int(px + L * np.cos(heading))
+            # attention : y écran inversé
+            end_y = int(py - L * np.sin(heading))
+            pygame.draw.line(screen, (0, 0, 0), (px, py), (end_x, end_y), 1)
+
+    # ----- Prédateurs -----
+    for i, (x, y) in enumerate(env.pred_pos):
+        px, py = w2p((x, y))
+        pygame.draw.circle(screen, (220, 0, 0), (px, py), 7)
+
+        v = env.pred_vel[i]
+        if np.linalg.norm(v) > 1e-6:
+            heading = np.arctan2(v[1], v[0])
+            L = 16  # nez un peu plus long pour les prédateurs
+            end_x = int(px + L * np.cos(heading))
+            end_y = int(py - L * np.sin(heading))
+            pygame.draw.line(screen, (0, 0, 0), (px, py), (end_x, end_y), 2)
 
     pygame.display.flip()
 
