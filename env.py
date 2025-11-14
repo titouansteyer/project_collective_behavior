@@ -16,7 +16,8 @@ class PredatorPreyEnv:
         prey_noise_std=0.0,      # on peut le laisser pour un peu de bruit
         r_rep=0.4,
         r_align=2.5,
-        r_attr=4.0
+        r_attr=4.0,
+        k_neighbors=6,
     ):
         self.n_prey = n_prey
         self.n_predators = n_predators
@@ -30,6 +31,7 @@ class PredatorPreyEnv:
         self.r_rep = r_rep
         self.r_align = r_align
         self.r_attr = r_attr
+        self.k_neighbors = k_neighbors
 
         self.reset()
 
@@ -45,19 +47,71 @@ class PredatorPreyEnv:
 
     # --------------------------------------------------------
     def _get_predator_obs(self):
-        obs = []
+        """
+        Observation pour chaque prédateur, calquée sur le papier :
+        own_state: [x, y, speed, heading]
+        voisins:   6 proies * [dx, dy, heading_j]
+                   6 preds * [dx, dy, heading_j]
+        => dim totale = 4 + 6*3*2 = 40
+        """
+        obs_all = []
+
         for i in range(self.n_predators):
+            # --- état propre ---
             px, py = self.pred_pos[i]
             vx, vy = self.pred_vel[i]
+            speed = float(np.linalg.norm([vx, vy]))
+            heading = float(np.arctan2(vy, vx))  # [-pi, pi]
+            own_state = [px, py, speed, heading]
 
-            # proie la plus proche
-            diffs = self.prey_pos - self.pred_pos[i]
-            dists = np.linalg.norm(diffs, axis=1)
-            j = np.argmin(dists)
-            dx, dy = diffs[j]
+            # --- voisins PROIES ---
+            diffs_prey = self.prey_pos - self.pred_pos[i]
+            # tore
+            diffs_prey = diffs_prey - np.round(diffs_prey / self.world_size) * self.world_size
+            dists_prey = np.linalg.norm(diffs_prey, axis=1)
 
-            obs.append([px, py, vx, vy, dx, dy])
-        return np.array(obs, dtype=float)
+            # indices des proies triées par distance
+            idx_sorted = np.argsort(dists_prey)
+            k = min(self.k_neighbors, len(idx_sorted))
+
+            prey_features = []
+            for j in range(k):
+                idx = idx_sorted[j]
+                dx, dy = diffs_prey[idx]
+                vxj, vyj = self.prey_vel[idx]
+                heading_j = float(np.arctan2(vyj, vxj))
+                prey_features.extend([dx, dy, heading_j])
+
+            # padding si moins de k voisins
+            while len(prey_features) < 3 * self.k_neighbors:
+                prey_features.extend([0.0, 0.0, 0.0])
+
+            # --- voisins PRÉDATEURS (autres que soi) ---
+            diffs_pred = self.pred_pos - self.pred_pos[i]
+            diffs_pred = diffs_pred - np.round(diffs_pred / self.world_size) * self.world_size
+            dists_pred = np.linalg.norm(diffs_pred, axis=1)
+            dists_pred[i] = np.inf  # ignorer soi-même
+
+            idx_sorted = np.argsort(dists_pred)
+            k = min(self.k_neighbors, len(idx_sorted))
+
+            pred_features = []
+            for j in range(k):
+                idx = idx_sorted[j]
+                dx, dy = diffs_pred[idx]
+                vxj, vyj = self.pred_vel[idx]
+                heading_j = float(np.arctan2(vyj, vxj))
+                pred_features.extend([dx, dy, heading_j])
+
+            while len(pred_features) < 3 * self.k_neighbors:
+                pred_features.extend([0.0, 0.0, 0.0])
+
+            obs_i = np.array(own_state + prey_features + pred_features, dtype=float)
+            obs_all.append(obs_i)
+
+        return np.vstack(obs_all)
+
+
 
     # -------------------------------------------------------- 
     def _couzin_forces(self):

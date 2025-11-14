@@ -1,19 +1,45 @@
 import numpy as np
 
+import numpy as np
+
 def degree_of_sparsity(positions):
     """
-    Compute Degree of Sparsity (DoS)
-    → Mean nearest-neighbor distance normalized by mean inter-agent distance.
+    Degree of Sparsity (DoS) in [0, 1]
+
+    1  → agents très espacés (sparse)
+    0  → agents très compacts
+
+    On prend :
+      - d_nn_i : distance au plus proche voisin de l'agent i
+      - d_mean : distance moyenne entre toutes les paires d'agents
+
+    DoS = mean(d_nn_i / d_mean)   puis on clip dans [0, 1]
     """
     n = len(positions)
     if n < 2:
-        return 0
+        return 0.0
 
-    distances = np.linalg.norm(positions[:, None, :] - positions[None, :, :], axis=-1)
+    # distances complètes
+    distances = np.linalg.norm(
+        positions[:, None, :] - positions[None, :, :],
+        axis=-1
+    )
+
+    # distances entre paires distinctes
+    mask = ~np.eye(n, dtype=bool)
+    pairwise = distances[mask]
+    d_mean = pairwise.mean() + 1e-8  # éviter la division par zéro
+
+    # nearest neighbour pour chaque agent
     np.fill_diagonal(distances, np.inf)
     nearest = np.min(distances, axis=1)
-    dos = np.mean(nearest)
-    return dos
+
+    # normalisation
+    dos = np.mean(nearest / d_mean)
+
+    # on force dans [0, 1]
+    return float(np.clip(dos, 0.0, 1.0))
+
 
 
 def degree_of_alignment(velocities):

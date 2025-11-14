@@ -13,7 +13,7 @@ STEPS_PER_EPISODE = 80    # au lieu de 200
 N_PREDATORS = 3
 N_PREYS = 5
 
-STATE_DIM = 6    # [x, y, vx, vy] pour CHAQUE prédateur
+STATE_DIM = 40 
 ACTION_DIM = 2   # [ax, ay]
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -87,10 +87,8 @@ for episode in range(EPISODES):
 
 import os
 os.makedirs("models", exist_ok=True)
-for i, actor in enumerate(agent.actors):
-    torch.save(actor.state_dict(), f"models/actor_predator_{i}.pth")
-print("Models saved in /models")
-
+torch.save(agent.actor.state_dict(), "models/actor_predator_shared.pth")
+print("Shared predator actor saved in /models/actor_predator_shared.pth")
 # ============================================================
 # Tracés
 # ============================================================

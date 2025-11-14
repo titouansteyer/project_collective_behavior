@@ -5,21 +5,20 @@ import numpy as np
 import random
 from collections import deque
 
-
 # ============================================================
-# 🔹 Réseaux Actor et Critic (plus petits)
+# Réseaux Actor / Critic (tu peux garder les tiens si identiques)
 # ============================================================
 
 class Actor(nn.Module):
-    def __init__(self, input_dim, action_dim, hidden_dim=64):
-        super(Actor, self).__init__()
+    def __init__(self, input_dim, action_dim, hidden_dim=128):
+        super().__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, action_dim),
-            nn.Tanh()  # actions ∈ [-1, 1]
+            nn.Tanh()
         )
 
     def forward(self, x):
@@ -27,131 +26,172 @@ class Actor(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, input_dim, action_dim, hidden_dim=64):
-        super(Critic, self).__init__()
+    def __init__(self, state_dim, action_dim, hidden_dim=128):
+        super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(input_dim + action_dim, hidden_dim),
+            nn.Linear(state_dim + action_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1)
         )
 
-    def forward(self, x, a):
-        # x: (B, state_dim * n_agents) , a: (B, action_dim * n_agents)
-        return self.net(torch.cat([x, a], dim=1))
-
+    def forward(self, state, action):
+        x = torch.cat([state, action], dim=1)
+        return self.net(x)
 
 # ============================================================
-# 🔹 Replay Buffer (plus petit)
+# Replay buffer (un échantillon = un prédateur)
 # ============================================================
 
 class ReplayBuffer:
-    def __init__(self, capacity=50000):  # au lieu de 100000
+    def __init__(self, capacity=100000):
         self.buffer = deque(maxlen=capacity)
 
     def push(self, state, action, reward, next_state):
-        # state: (n_agents, state_dim)
-        # action: (n_agents, action_dim)
-        # reward: (n_agents,)
         self.buffer.append((state, action, reward, next_state))
 
     def sample(self, batch_size):
         batch = random.sample(self.buffer, batch_size)
         state, action, reward, next_state = map(np.stack, zip(*batch))
-        # state -> (B, n_agents, state_dim)
-        # action -> (B, n_agents, action_dim)
-        # reward -> (B, n_agents)
         return state, action, reward, next_state
 
     def __len__(self):
         return len(self.buffer)
 
 
-# ============================================================
-# 🔹 MADDPG Agent (version légère)
-# ============================================================
-
 class MADDPGAgent:
+    """
+    Version 'partagée' : un seul actor/critic pour tous les prédateurs,
+    inspirée de la partie 'predator' du code du papier.
+    L’API reste compatible avec ton train.py :
+      - select_action(state, agent_idx, noise_scale)
+      - store_transition(obs, actions, rewards, next_obs)
+      - update()
+    """
     def __init__(
         self,
         state_dim,
         action_dim,
-        n_agents=3,
+        n_agents=3,          # conservé pour compat, mais non utilisé
         gamma=0.95,
         tau=0.01,
         lr=1e-3,
+        batch_size=128,
         device="cpu"
     ):
-        self.n_agents = n_agents
+        self.state_dim = state_dim
+        self.action_dim = action_dim
         self.gamma = gamma
         self.tau = tau
-        self.device = device
+        self.device = torch.device(device)
+        self.batch_size = batch_size
 
-        # Acteurs / Critiques beaucoup plus petits
-        self.actors = [Actor(state_dim, action_dim, hidden_dim=64).to(device)
-                       for _ in range(n_agents)]
-        self.critics = [Critic(state_dim * n_agents, action_dim * n_agents, hidden_dim=64).to(device)
-                        for _ in range(n_agents)]
+        # Réseaux principal + cibles (partagés par tous les prédateurs)
+        self.actor = Actor(state_dim, action_dim, hidden_dim=128).to(self.device)
+        self.critic = Critic(state_dim, action_dim, hidden_dim=128).to(self.device)
 
-        self.actor_optimizers = [optim.Adam(a.parameters(), lr=lr) for a in self.actors]
-        self.critic_optimizers = [optim.Adam(c.parameters(), lr=lr) for c in self.critics]
+        self.actor_target = Actor(state_dim, action_dim, hidden_dim=128).to(self.device)
+        self.critic_target = Critic(state_dim, action_dim, hidden_dim=128).to(self.device)
 
-        self.buffer = ReplayBuffer()
-        self.batch_size = 64          # au lieu de 128
+        self.actor_target.load_state_dict(self.actor.state_dict())
+        self.critic_target.load_state_dict(self.critic.state_dict())
 
-    def select_action(self, state, agent_idx, noise_scale=0.1):
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=lr)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=lr)
+
+        self.buffer = ReplayBuffer(capacity=100000)
+
+        # stats de normalisation (option simple : recomputées à chaque update)
+        self.state_mean = torch.zeros(state_dim, device=self.device)
+        self.state_std = torch.ones(state_dim, device=self.device)
+
+    # --------------------------------------------------------
+    def select_action(self, state, agent_idx=None, noise_scale=0.1):
         """
-        state: vecteur (state_dim,) pour un agent.
+        state : np.array (STATE_DIM,) pour UN prédateur.
+        agent_idx est ignoré (compat train.py).
         """
-        state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        state_t = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        norm_state = (state_t - self.state_mean) / (self.state_std + 1e-8)
+
         with torch.no_grad():
-            action = self.actors[agent_idx](state).cpu().numpy()[0]
-        action += noise_scale * np.random.randn(*action.shape)
-        return np.clip(action, -1, 1)
+            action = self.actor(norm_state).cpu().numpy()[0]
 
-    def store_transition(self, state, action, reward, next_state):
-        # state: (n_agents, state_dim)
-        # action: (n_agents, action_dim)
-        # reward: (n_agents,)
-        self.buffer.push(state, action, reward, next_state)
+        if noise_scale > 0.0:
+            action += noise_scale * np.random.randn(*action.shape)
 
+        return np.clip(action, -1.0, 1.0)
+
+    # --------------------------------------------------------
+    def store_transition(self, states, actions, rewards, next_states):
+        """
+        states, next_states : shape (n_agents, state_dim)
+        actions : shape (n_agents, action_dim)
+        rewards : shape (n_agents,)
+        On découpe et on ajoute 1 expérience par prédateur.
+        """
+        states = np.asarray(states)
+        actions = np.asarray(actions)
+        rewards = np.asarray(rewards)
+        next_states = np.asarray(next_states)
+
+        n = states.shape[0]
+        for i in range(n):
+            self.buffer.push(
+                states[i],
+                actions[i],
+                rewards[i],
+                next_states[i]
+            )
+
+    # --------------------------------------------------------
     def update(self):
-        """Met à jour les acteurs et critiques (si assez d'échantillons)."""
         if len(self.buffer) < self.batch_size:
             return
 
         states, actions, rewards, next_states = self.buffer.sample(self.batch_size)
-        states = torch.FloatTensor(states).to(self.device)         # (B, n_agents, state_dim)
-        actions = torch.FloatTensor(actions).to(self.device)       # (B, n_agents, action_dim)
-        rewards = torch.FloatTensor(rewards).to(self.device)       # (B, n_agents)
+
+        states = torch.FloatTensor(states).to(self.device)
+        actions = torch.FloatTensor(actions).to(self.device)
+        rewards = torch.FloatTensor(rewards).unsqueeze(-1).to(self.device)
         next_states = torch.FloatTensor(next_states).to(self.device)
 
-        B = self.batch_size
-        for i in range(self.n_agents):
-            # --- Critic update ---
-            with torch.no_grad():
-                next_actions_list = [self.actors[j](next_states[:, j, :]) for j in range(self.n_agents)]
-                next_actions = torch.cat(next_actions_list, dim=1)  # (B, action_dim * n_agents)
-                target_q = rewards[:, i].unsqueeze(1) + self.gamma * \
-                           self.critics[i](next_states.view(B, -1), next_actions)
+        # normalisation (simple) sur ce batch
+        self.state_mean = states.mean(dim=0)
+        self.state_std = states.std(dim=0) + 1e-8
 
-            current_q = self.critics[i](states.view(B, -1), actions.view(B, -1))
-            critic_loss = nn.MSELoss()(current_q, target_q)
+        norm_states = (states - self.state_mean) / self.state_std
+        norm_next_states = (next_states - self.state_mean) / self.state_std
 
-            self.critic_optimizers[i].zero_grad()
-            critic_loss.backward()
-            self.critic_optimizers[i].step()
+        # ---------- Critic ----------
+        with torch.no_grad():
+            next_actions = self.actor_target(norm_next_states)
+            target_q = rewards + self.gamma * self.critic_target(
+                norm_next_states, next_actions
+            )
 
-            # --- Actor update ---
-            # On remplace seulement les actions de l'agent i par celles de son acteur
-            actor_actions_list = [
-                self.actors[j](states[:, j, :]) if j == i else actions[:, j, :]
-                for j in range(self.n_agents)
-            ]
-            actor_actions = torch.cat(actor_actions_list, dim=1)
-            actor_loss = -self.critics[i](states.view(B, -1), actor_actions).mean()
+        current_q = self.critic(norm_states, actions)
+        critic_loss = nn.MSELoss()(current_q, target_q)
 
-            self.actor_optimizers[i].zero_grad()
-            actor_loss.backward()
-            self.actor_optimizers[i].step()
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=1.0)
+        self.critic_optimizer.step()
+
+        # ---------- Actor ----------
+        current_actions = self.actor(norm_states)
+        actor_loss = -self.critic(norm_states, current_actions).mean()
+
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward()
+        nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1.0)
+        self.actor_optimizer.step()
+
+        # ---------- Soft update cibles ----------
+        self._soft_update(self.actor_target, self.actor)
+        self._soft_update(self.critic_target, self.critic)
+
+    def _soft_update(self, target, source):
+        for tp, p in zip(target.parameters(), source.parameters()):
+            tp.data.copy_(self.tau * p.data + (1.0 - self.tau) * tp.data)
