@@ -4,16 +4,16 @@ import imageio.v2 as imageio
 import torch
 
 from env import PredatorPreyEnv
-from maddpg import MADDPGAgent   # nouvelle version (acteur partagé)
+from maddpg import MADDPGAgent
 
 WIDTH, HEIGHT = 800, 800
 FPS = 30
-N_STEPS = 300
+N_STEPS = 500
 OUTPUT_GIF = "simulation.gif"
 
-STATE_DIM = 40   # doit matcher env._get_predator_obs()
+STATE_DIM = 40
 ACTION_DIM = 2
-ACTION_SCALE = 0.3  # pour calmer un peu les actions en visu
+ACTION_SCALE = 0.3
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -21,11 +21,9 @@ pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 clock = pygame.time.Clock()
 
-# === ENVIRONNEMENT ===
 env = PredatorPreyEnv(world_size=7.0)
-obs = env.reset()     # shape (n_predators, STATE_DIM)
+obs = env.reset()
 
-# === AGENT ===
 agent = MADDPGAgent(
     state_dim=STATE_DIM,
     action_dim=ACTION_DIM,
@@ -33,7 +31,7 @@ agent = MADDPGAgent(
     device=device
 )
 
-# Charger l’acteur partagé entraîné
+# charger l'acteur entraîné
 actor_path = "models/actor_predator_shared.pth"
 agent.actor.load_state_dict(torch.load(actor_path, map_location=device))
 agent.actor.eval()
@@ -42,11 +40,14 @@ print(f"Loaded shared actor from {actor_path}")
 frames = []
 
 def w2p(pos):
-    """coordonnées monde -> pixels (y inversé)."""
     x, y = pos
-    return int(x * 110), int(HEIGHT - y * 110)
+    # on étire pour remplir la fenêtre
+    scale = WIDTH / env.world_size
+    px = int(x * scale)
+    py = int(HEIGHT - y * scale)
+    return px, py
 
-print("Running simulation...")
+print("Running simulation for visualization...")
 
 for step in range(N_STEPS):
 
@@ -55,24 +56,22 @@ for step in range(N_STEPS):
             pygame.quit()
             raise SystemExit
 
-    # === ACTIONS RL (une pour chaque prédateur) ===
+    # actions des prédateurs (sans bruit)
     actions = []
     for i in range(env.n_predators):
-        a = agent.select_action(obs[i], noise_scale=0.0)   # pas de bruit en eval
+        a = agent.select_action(obs[i], noise_scale=0.0)
         actions.append(ACTION_SCALE * a)
     actions = np.array(actions)
 
-    # step environnement
     obs, rew, done, info = env.step(actions)
 
-    # === DRAW ===
+    # --- rendu ---
     screen.fill((255, 255, 255))
 
-    # Proies
+    # proies
     for i, (x, y) in enumerate(env.prey_pos):
         px, py = w2p((x, y))
         pygame.draw.circle(screen, (0, 200, 0), (px, py), 4)
-
         v = env.prey_vel[i]
         if np.linalg.norm(v) > 1e-6:
             heading = np.arctan2(v[1], v[0])
@@ -81,11 +80,10 @@ for step in range(N_STEPS):
             end_y = int(py - L * np.sin(heading))
             pygame.draw.line(screen, (0, 0, 0), (px, py), (end_x, end_y), 1)
 
-    # Prédateurs
+    # prédateurs
     for i, (x, y) in enumerate(env.pred_pos):
         px, py = w2p((x, y))
         pygame.draw.circle(screen, (220, 0, 0), (px, py), 7)
-
         v = env.pred_vel[i]
         if np.linalg.norm(v) > 1e-6:
             heading = np.arctan2(v[1], v[0])
@@ -96,15 +94,14 @@ for step in range(N_STEPS):
 
     pygame.display.flip()
 
-    # === CAPTURE GIF ===
-    arr = pygame.surfarray.array3d(screen)   # (W,H,3)
-    frame = np.transpose(arr, (1, 0, 2))     # (H,W,3)
+    # capture
+    arr = pygame.surfarray.array3d(screen)
+    frame = np.transpose(arr, (1, 0, 2))
     frames.append(frame.astype(np.uint8))
 
     clock.tick(FPS)
 
 pygame.quit()
-
 print("Saving GIF...")
 imageio.mimsave(OUTPUT_GIF, frames, fps=30)
-print("GIF saved as:", OUTPUT_GIF)
+print(f"GIF saved as {OUTPUT_GIF}")
