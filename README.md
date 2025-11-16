@@ -48,10 +48,36 @@ In the first phase, we will:
 - **Report 2**: 2025-12-07
 - **Final Report**: 2026-01-11
 
+## Keywords
+
+- Collective behaviour
+- Predator–prey dynamics
+- Multi-Agent Reinforcement Learning (MARL)
+- Swarming and flocking
+- Emergent behaviour
+- Degree of Sparsity (DoS)
+- Degree of Alignment (DoA)
+- Swarm robotics
+
+
 ## Installation
+### Requirements
+- Python 3.10+  
+- Recommended: virtual environment (`venv` or `conda`)
+
+### Setup
+
+```bash
 git clone https://github.com/titouansteyer/project_collective_behavior.git
 cd project_collective_behavior
 
+## How to Run
+### 1. Train the agents
+To launch a training run:
 
-## Run
-python3 main.py
+```bash
+python3 train.py
+
+### 2. Visualisation
+```bash
+python3 visualize.py
