@@ -6,8 +6,7 @@ import random
 from collections import deque
 
 # ------------------------------------------------------------
-# Réseaux Actor / Critic
-# ------------------------------------------------------------
+# Actor / Critic
 
 class Actor(nn.Module):
     def __init__(self, input_dim, action_dim, hidden_dim=128):
@@ -42,7 +41,6 @@ class Critic(nn.Module):
 
 # ------------------------------------------------------------
 # Replay buffer
-# ------------------------------------------------------------
 
 class ReplayBuffer:
     def __init__(self, capacity=100000):
@@ -60,15 +58,14 @@ class ReplayBuffer:
         return len(self.buffer)
 
 # ------------------------------------------------------------
-# MADDPG (acteur partagé pour tous les prédateurs)
-# ------------------------------------------------------------
+# MADDPG (shared actor for all predators)
 
 class MADDPGAgent:
     def __init__(
         self,
         state_dim,
         action_dim,
-        n_agents=3,       # pour info, pas utilisé directement
+        n_agents=3, 
         gamma=0.95,
         tau=0.01,
         lr=1e-3,
@@ -143,7 +140,7 @@ class MADDPGAgent:
         rewards = torch.FloatTensor(rewards).unsqueeze(-1).to(self.device)
         next_states = torch.FloatTensor(next_states).to(self.device)
 
-        # stats de normalisation sur ce batch
+        # normalization stats on this batch
         self.state_mean = states.mean(dim=0)
         self.state_std = states.std(dim=0) + 1e-8
 

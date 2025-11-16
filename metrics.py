@@ -1,5 +1,6 @@
 import numpy as np
 
+# DoS between 0 and 1
 def degree_of_sparsity(positions, R=50):
     n = len(positions)
     if n < 2:
@@ -13,7 +14,7 @@ def degree_of_sparsity(positions, R=50):
     dos = np.clip(np.mean(nearest) / max_dist, 0, 1)
     return dos
 
-
+# DoA between 0 and 1
 def degree_of_alignment(velocities):
     n = len(velocities)
     if n < 2:

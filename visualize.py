@@ -31,7 +31,7 @@ agent = MADDPGAgent(
     device=device
 )
 
-# charger l'acteur entraîné
+# load trained actor
 actor_path = "models/actor_predator_shared.pth"
 agent.actor.load_state_dict(torch.load(actor_path, map_location=device))
 agent.actor.eval()
@@ -41,7 +41,7 @@ frames = []
 
 def w2p(pos):
     x, y = pos
-    # on étire pour remplir la fenêtre
+    # stretch to fill the window
     scale = WIDTH / env.world_size
     px = int(x * scale)
     py = int(HEIGHT - y * scale)
@@ -56,7 +56,7 @@ for step in range(N_STEPS):
             pygame.quit()
             raise SystemExit
 
-    # actions des prédateurs (sans bruit)
+    # predator actions (no noise)
     actions = []
     for i in range(env.n_predators):
         a = agent.select_action(obs[i], noise_scale=0.0)
@@ -65,10 +65,10 @@ for step in range(N_STEPS):
 
     obs, rew, done, info = env.step(actions)
 
-    # --- rendu ---
+    # rendering
     screen.fill((255, 255, 255))
 
-    # proies
+    # prey
     for i, (x, y) in enumerate(env.prey_pos):
         px, py = w2p((x, y))
         pygame.draw.circle(screen, (0, 200, 0), (px, py), 4)
@@ -80,7 +80,7 @@ for step in range(N_STEPS):
             end_y = int(py - L * np.sin(heading))
             pygame.draw.line(screen, (0, 0, 0), (px, py), (end_x, end_y), 1)
 
-    # prédateurs
+    # predators
     for i, (x, y) in enumerate(env.pred_pos):
         px, py = w2p((x, y))
         pygame.draw.circle(screen, (220, 0, 0), (px, py), 7)

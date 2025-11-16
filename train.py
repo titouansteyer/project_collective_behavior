@@ -7,21 +7,19 @@ from maddpg import MADDPGAgent
 from env import PredatorPreyEnv
 
 # ------------------------------------------------------------
-# Config
-# ------------------------------------------------------------
+# Hyperparameters
 
 EPISODES = 1000
 STEPS_PER_EPISODE = 80
 N_PREDATORS = 3
-N_PREYS = 20     # cohérent avec env par défaut
+N_PREYS = 20
 
-STATE_DIM = 40   # doit matcher _get_predator_obs()
+STATE_DIM = 40 
 ACTION_DIM = 2
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ------------------------------------------------------------
-# Init
-# ------------------------------------------------------------
+# Initialization
 
 env = PredatorPreyEnv(n_prey=N_PREYS, n_predators=N_PREDATORS, world_size=7.0)
 
@@ -37,8 +35,7 @@ DoS_values, DoA_values = [], []
 total_steps = 0
 
 # ------------------------------------------------------------
-# Entraînement
-# ------------------------------------------------------------
+# Training
 
 for episode in range(EPISODES):
     obs = env.reset()   # shape (N_PREDATORS, STATE_DIM)
@@ -76,16 +73,14 @@ for episode in range(EPISODES):
     )
 
 # ------------------------------------------------------------
-# Sauvegarde modèle
-# ------------------------------------------------------------
+# Save model
 
 os.makedirs("models", exist_ok=True)
 torch.save(agent.actor.state_dict(), "models/actor_predator_shared.pth")
 print("Saved shared predator actor in models/actor_predator_shared.pth")
 
 # ------------------------------------------------------------
-# Plots
-# ------------------------------------------------------------
+# Plotting results
 
 plt.figure(figsize=(10, 5))
 plt.subplot(1, 2, 1)
