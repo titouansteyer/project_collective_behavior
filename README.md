@@ -32,14 +32,16 @@ In the first phase, we will:
 
 ### **Milestone 2 — Second Report**
 - Improve **Report 1** based on feedback.  
-- Add details about the **MADDPG algorithm**, training, and verification.  
-- Conduct **parameter sweeps** (predator number, perception range, speed ratio).  
-- Report intermediate results and update the **README.md**.  
+- Stabilise the environment so that it matches the behaviour described in Li et al. (2023) and produces consistent baseline results.
+- Improve the current reinforcement learning training.
+- Analyse emergent behaviours using the DoS and DoA metrics to compare random motion, deterministic rules, and early RL policies.
+- Investigate the effect of simple parameters, such as the number of predators/prey or the observation radius.  
 
 ### **Milestone 3 — Final Report**
-- Produce the **final polished report** (≤ 4 pages / 2000 words).  
+- Produce the **final polished report** (≤ 4 pages / 2000 words).
+- Compare baseline, deterministic rules, and trained behaviours using DoS/DoA.
 - Compare baseline and extended models (quantitative DoS/DoA results).  
-- Discuss limitations and propose future work.  
+- Discuss limitations and propose future work (speed differences, obstacles, scalability).
 - Prepare and attach **presentation slides** (≤ 20 min).  
 - Finalize GitHub: cleaned structure, clear README, and run instructions.  
   
@@ -47,18 +49,6 @@ In the first phase, we will:
 - **Report 1**: 2025-11-16  
 - **Report 2**: 2025-12-07
 - **Final Report**: 2026-01-11
-
-## Keywords
-
-- Collective behaviour
-- Predator–prey dynamics
-- Multi-Agent Reinforcement Learning (MARL)
-- Swarming and flocking
-- Emergent behaviour
-- Degree of Sparsity (DoS)
-- Degree of Alignment (DoA)
-- Swarm robotics
-
 
 ## Installation
 ### Requirements
@@ -70,6 +60,7 @@ In the first phase, we will:
 ```bash
 git clone https://github.com/titouansteyer/project_collective_behavior.git
 cd project_collective_behavior
+```
 
 ## How to Run
 ### 1. Train the agents
@@ -77,6 +68,7 @@ To launch a training run:
 
 ```bash
 python3 train.py
+```
 
 ### 2. Visualisation
 ```bash
