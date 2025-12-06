@@ -3,7 +3,8 @@ import numpy as np
 import imageio.v2 as imageio
 import torch
 
-from env import PredatorPreyEnv
+#from env import PredatorPreyEnv #pour bord infini
+from env_border_strong import PredatorPreyEnvReflect as PredatorPreyEnv#pour bord solide
 from maddpg import MADDPGAgent
 
 WIDTH, HEIGHT = 800, 800
