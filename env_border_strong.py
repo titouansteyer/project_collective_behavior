@@ -21,6 +21,49 @@ def reflect_positions_and_velocities(pos, vel, L):
     return pos_ref, vel_ref
 
 
+def wall_force_hooke(pos, vel, L, k=50.0, c=2.0):
+    """
+    Murs physiques type papier (Hooke + damping) :
+    si une particule pénètre le mur, on applique une force de rappel proportionnelle
+    à la pénétration (raideur k), plus un amortissement sur la composante normale (c).
+
+    pos, vel: (N, 2)
+    Retour: fb (N, 2)
+    """
+    fb = np.zeros_like(pos)
+
+    # x < 0
+    pen = -pos[:, 0]
+    m = pen > 0
+    if np.any(m):
+        fb[m, 0] += k * pen[m]
+        fb[m, 0] += -c * vel[m, 0]
+
+    # x > L
+    pen = pos[:, 0] - L
+    m = pen > 0
+    if np.any(m):
+        fb[m, 0] += -k * pen[m]
+        fb[m, 0] += -c * vel[m, 0]
+
+    # y < 0
+    pen = -pos[:, 1]
+    m = pen > 0
+    if np.any(m):
+        fb[m, 1] += k * pen[m]
+        fb[m, 1] += -c * vel[m, 1]
+
+    # y > L
+    pen = pos[:, 1] - L
+    m = pen > 0
+    if np.any(m):
+        fb[m, 1] += -k * pen[m]
+        fb[m, 1] += -c * vel[m, 1]
+
+    return fb
+
+
+
 class PredatorPreyEnvReflect:
     """
     2D predator–prey avec MURS RÉFLÉCHISSANTS (pas de tore).
@@ -49,6 +92,9 @@ class PredatorPreyEnvReflect:
         k_neighbors: int = 6,
         # predator avoidance
         predator_influence_radius: float = 2.0,
+        wall_stiffness: float = 50.0,
+        wall_damping: float = 2.0,
+
     ):
         self.n_prey = n_prey
         self.n_predators = n_predators
@@ -68,6 +114,8 @@ class PredatorPreyEnvReflect:
 
         # perception globale (inchangé)
         self.perception_radius = world_size
+        self.wall_stiffness = wall_stiffness
+        self.wall_damping = wall_damping
 
         self.reset()
 
@@ -223,10 +271,26 @@ class PredatorPreyEnvReflect:
         # --- Proies ---
         new_dirs = self._compute_prey_directions()
         self.prey_vel = self.prey_speed_limit * new_dirs
+
+
+        #prey_pos_raw = self.prey_pos + self.dt * self.prey_vel
+        #self.prey_pos, self.prey_vel = reflect_positions_and_velocities(
+        #    prey_pos_raw, self.prey_vel, self.world_size
+        #)
         prey_pos_raw = self.prey_pos + self.dt * self.prey_vel
-        self.prey_pos, self.prey_vel = reflect_positions_and_velocities(
-            prey_pos_raw, self.prey_vel, self.world_size
+
+        fb_prey = wall_force_hooke(
+            prey_pos_raw, self.prey_vel, self.world_size,
+            k=self.wall_stiffness, c=self.wall_damping
         )
+
+        # applique fb comme une accélération (masse=1 comme dans la table du papier)
+        self.prey_vel = self.prey_vel + self.dt * fb_prey
+
+        # recalcule la position avec la vitesse corrigée
+        self.prey_pos = self.prey_pos + self.dt * self.prey_vel
+
+
 
         # --- Prédateurs ---
         self.pred_vel += self.dt * predator_actions
@@ -239,10 +303,21 @@ class PredatorPreyEnvReflect:
             self.pred_vel,
         )
 
+        #pred_pos_raw = self.pred_pos + self.dt * self.pred_vel
+        #self.pred_pos, self.pred_vel = reflect_positions_and_velocities(
+        #    pred_pos_raw, self.pred_vel, self.world_size
+        #)
+
         pred_pos_raw = self.pred_pos + self.dt * self.pred_vel
-        self.pred_pos, self.pred_vel = reflect_positions_and_velocities(
-            pred_pos_raw, self.pred_vel, self.world_size
+
+        fb_pred = wall_force_hooke(
+            pred_pos_raw, self.pred_vel, self.world_size,
+            k=self.wall_stiffness, c=self.wall_damping
         )
+
+        self.pred_vel = self.pred_vel + self.dt * fb_pred
+        self.pred_pos = self.pred_pos + self.dt * self.pred_vel
+
 
         # --- Rewards + respawn proies attrapées ---
         rewards = np.zeros(self.n_predators)

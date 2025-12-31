@@ -4,8 +4,8 @@ import torch
 import matplotlib.pyplot as plt
 
 from maddpg import MADDPGAgent
-#from env import PredatorPreyEnv #pour bord infini
-from env_border_strong import PredatorPreyEnvReflect as PredatorPreyEnv #pour bord solide
+from env import PredatorPreyEnv #pour bord infini
+#from env_border_strong import PredatorPreyEnvReflect as PredatorPreyEnv #pour bord solide
 
 # ------------------------------------------------------------
 # Hyperparameters
