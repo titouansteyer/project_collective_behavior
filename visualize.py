@@ -3,15 +3,31 @@ import numpy as np
 import imageio.v2 as imageio
 import torch
 
-# from env import PredatorPreyEnv  # bords infinis
-from env_border_strong import PredatorPreyEnvReflect as PredatorPreyEnv  # bords solides
-
 from maddpg import MADDPGAgent
+
+# ============================================================
+# CHOIX ICI (MINIMAL)
+MODE = "torus"   # "torus" ou "walls"
+# ============================================================
+
+if MODE == "torus":
+    from env import PredatorPreyEnv as PredatorPreyEnv  # bords infinis (tore)
+    pred_actor_path = "models/actor_pred_torus.pth"
+    prey_actor_path = "models/actor_prey_torus.pth"
+    OUTPUT_GIF = "simulation_torus.gif"
+elif MODE == "walls":
+    from env_border_strong import PredatorPreyEnvReflect as PredatorPreyEnv  # bords solides (strong)
+    pred_actor_path = "models/actor_pred_walls.pth"
+    prey_actor_path = "models/actor_prey_walls.pth"
+    OUTPUT_GIF = "simulation_walls.gif"
+else:
+    raise ValueError("MODE must be 'torus' or 'walls'")
+
+# ============================================================
 
 WIDTH, HEIGHT = 800, 800
 FPS = 30
 N_STEPS = 600
-OUTPUT_GIF = "simulation.gif"
 
 STATE_DIM = 40
 ACTION_DIM = 2
@@ -29,8 +45,17 @@ clock = pygame.time.Clock()
 # IMPORTANT: mets les mêmes paramètres que le training (world_size, n_prey, n_predators)
 env = PredatorPreyEnv(world_size=7.0, n_prey=40, n_predators=3)
 
-# reset renvoie les obs des deux espèces
-pred_obs, prey_obs = env.reset()
+# reset renvoie parfois pred_obs seul (torus simple) OU (pred_obs, prey_obs)
+out = env.reset()
+if isinstance(out, tuple) and len(out) == 2:
+    pred_obs, prey_obs = out
+else:
+    pred_obs = out
+    # si l'env ne renvoie pas prey_obs, on essaie de le récupérer
+    if hasattr(env, "_get_prey_obs"):
+        prey_obs = env._get_prey_obs()
+    else:
+        raise RuntimeError("Env reset() ne renvoie pas prey_obs et env._get_prey_obs() absent.")
 
 # --- Agents ---
 agent_pred = MADDPGAgent(
@@ -48,16 +73,13 @@ agent_prey = MADDPGAgent(
 )
 
 # --- Load trained actors ---
-pred_actor_path = "models/actor_predator_shared.pth"
-prey_actor_path = "models/actor_prey_shared.pth"
-
 agent_pred.actor.load_state_dict(torch.load(pred_actor_path, map_location=device))
 agent_pred.actor.eval()
-print(f"Loaded predator actor from {pred_actor_path}")
+print(f"[{MODE}] Loaded predator actor from {pred_actor_path}")
 
 agent_prey.actor.load_state_dict(torch.load(prey_actor_path, map_location=device))
 agent_prey.actor.eval()
-print(f"Loaded prey actor from {prey_actor_path}")
+print(f"[{MODE}] Loaded prey actor from {prey_actor_path}")
 
 frames = []
 
@@ -74,7 +96,7 @@ def w2p(pos):
     return px, py
 
 
-print("Running simulation for visualization...")
+print(f"Running simulation for visualization ({MODE})...")
 
 for step in range(N_STEPS):
 
@@ -96,7 +118,16 @@ for step in range(N_STEPS):
         prey_actions[j] = ACTION_SCALE_PREY * a
 
     # --- Step env (coevolution) ---
-    (pred_obs, prey_obs), (rew_pred, rew_prey), done, info = env.step(pred_actions, prey_actions)
+    # Certains envs (torus) peuvent aussi accepter prey_actions, d'autres non.
+    # On essaie coevolution, sinon fallback predators-only.
+    try:
+        (pred_obs, prey_obs), (rew_pred, rew_prey), done, info = env.step(pred_actions, prey_actions)
+    except TypeError:
+        # fallback: env sans coevolution
+        pred_obs, rew_pred, done, info = env.step(pred_actions)
+        # on reconstruit prey_obs si possible
+        if hasattr(env, "_get_prey_obs"):
+            prey_obs = env._get_prey_obs()
 
     # --- Render ---
     screen.fill((255, 255, 255))
