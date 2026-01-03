@@ -327,7 +327,7 @@ class PredatorPreyEnv:
                 self.prey_vel[caught_idx] = self.prey_speed_limit * rand_dirs / norms
 
         # --- Compute collective metrics ---
-        dos = degree_of_sparsity(self.prey_pos)
+        dos = degree_of_sparsity(self.prey_pos, world_size=self.world_size)
         doa = degree_of_alignment(self.prey_vel)
         info = {"DoS": dos, "DoA": doa}
         done = False

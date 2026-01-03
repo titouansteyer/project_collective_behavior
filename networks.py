@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+
 class Actor(nn.Module):
     def __init__(self, input_dim: int, action_dim: int, hidden_dim: int = 64, hidden_layer_num: int = 3):
         """

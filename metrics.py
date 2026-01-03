@@ -1,18 +1,25 @@
 import numpy as np
 
 # DoS between 0 and 1
-def degree_of_sparsity(positions, R=50):
+def degree_of_sparsity(positions, R=None, world_size=None):
     n = len(positions)
     if n < 2:
-        return 1
+        return 1.0
 
-    dists = np.linalg.norm(positions[:, None, :] - positions[None, :, :], axis=-1)
+    if R is None:
+        assert world_size is not None, "Provide world_size if R is None"
+        R = np.sqrt(2) * world_size  # diagonale du domaine
+
+    dists = np.linalg.norm(
+        positions[:, None, :] - positions[None, :, :],
+        axis=-1
+    )
     np.fill_diagonal(dists, np.inf)
 
     nearest = np.min(dists, axis=1)
-    max_dist = R
-    dos = np.clip(np.mean(nearest) / max_dist, 0, 1)
-    return dos
+    dos = np.clip(np.mean(nearest) / R, 0.0, 1.0)
+    return float(dos)
+
 
 # DoA between 0 and 1
 def degree_of_alignment(velocities):

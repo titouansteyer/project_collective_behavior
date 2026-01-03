@@ -6,14 +6,15 @@ import matplotlib.pyplot as plt
 from maddpg import MADDPGAgent
 
 # Choisis l'env :
-# from env import PredatorPreyEnv  # bords infinis (tore)
+#from env import PredatorPreyEnv  # bords infinis (tore)
+#EXP_NAME = "walls"
 from env_border_strong import PredatorPreyEnvReflect as PredatorPreyEnv  # bords solides
-
+EXP_NAME = "walls"
 
 # ------------------------------------------------------------
 # Hyperparameters
 
-EPISODES = 2000
+EPISODES = 500
 STEPS_PER_EPISODE = 100
 
 N_PREDATORS = 3
@@ -141,37 +142,86 @@ for episode in range(EPISODES):
 # Save models
 
 os.makedirs("models", exist_ok=True)
-torch.save(agent_pred.actor.state_dict(), "models/actor_predator_shared.pth")
-torch.save(agent_prey.actor.state_dict(), "models/actor_prey_shared.pth")
+torch.save(
+    agent_pred.actor.state_dict(),
+    f"models/actor_pred_{EXP_NAME}.pth"
+)
 
+torch.save(
+    agent_prey.actor.state_dict(),
+    f"models/actor_prey_{EXP_NAME}.pth"
+)
 print("Saved:")
-print(" - models/actor_predator_shared.pth")
-print(" - models/actor_prey_shared.pth")
+print(f" - models/actor_pred_{EXP_NAME}.pth")
+print(f" - models/actor_prey_{EXP_NAME}.pth")
 
 # ------------------------------------------------------------
 # Plotting results
 
-plt.figure(figsize=(12, 5))
 
-plt.subplot(1, 3, 1)
-plt.plot(rewards_pred_history)
-plt.title("Predators: avg reward / episode")
+def rolling_mean(x, w=50):
+    x = np.asarray(x, dtype=float)
+    if len(x) < w:
+        return x
+    return np.convolve(x, np.ones(w)/w, mode="valid")
+
+def rolling_std(x, w=50):
+    x = np.asarray(x, dtype=float)
+    out = []
+    for i in range(w-1, len(x)):
+        out.append(np.std(x[i-w+1:i+1]))
+    return np.array(out)
+
+W = 50  # fenêtre de lissage (essaie 50 ou 100)
+
+# --- Rewards predators ---
+r = np.array(rewards_pred_history)  # ou rewards_history si predators seuls
+rm = rolling_mean(r, W)
+rs = rolling_std(r, W)
+x = np.arange(len(rm))
+
+plt.figure(figsize=(10,4))
+plt.plot(x, rm)
+plt.fill_between(x, rm-rs, rm+rs, alpha=0.2)
+plt.title("Predators reward (rolling mean ± std)")
 plt.xlabel("Episode")
 plt.ylabel("Reward")
+plt.tight_layout()
+plt.savefig("predator_reward.png")
+plt.show()
 
-plt.subplot(1, 3, 2)
-plt.plot(rewards_prey_history)
-plt.title("Prey: avg reward / episode")
-plt.xlabel("Episode")
-plt.ylabel("Reward")
+# --- Rewards prey (si coevolution) ---
+if "rewards_prey_history" in globals():
+    r = np.array(rewards_prey_history)
+    rm = rolling_mean(r, W)
+    rs = rolling_std(r, W)
+    x = np.arange(len(rm))
 
-plt.subplot(1, 3, 3)
-plt.plot(DoS_values, label="DoS")
-plt.plot(DoA_values, label="DoA")
-plt.title("Collective metrics (prey)")
+    plt.figure(figsize=(10,4))
+    plt.plot(x, rm)
+    plt.fill_between(x, rm-rs, rm+rs, alpha=0.2)
+    plt.title("Prey reward (rolling mean ± std)")
+    plt.xlabel("Episode")
+    plt.ylabel("Reward")
+    plt.tight_layout()
+    plt.savefig("prey_reward.png")
+    plt.show()
+
+# --- DoS / DoA ---
+dos = np.array(DoS_values)
+doa = np.array(DoA_values)
+
+dos_m = rolling_mean(dos, W)
+doa_m = rolling_mean(doa, W)
+x = np.arange(len(dos_m))
+
+plt.figure(figsize=(10,4))
+plt.plot(x, dos_m, label="DoS (smoothed)")
+plt.plot(x, doa_m, label="DoA (smoothed)")
+plt.ylim(0, 1)
+plt.title("Collective metrics (smoothed)")
 plt.xlabel("Episode")
 plt.legend()
-
 plt.tight_layout()
-plt.savefig("training_metrics.png")
+plt.savefig("collective_metrics.png")
 plt.show()

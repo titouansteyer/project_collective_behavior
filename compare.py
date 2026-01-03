@@ -1,220 +1,228 @@
-import os
-import random
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
 
 from maddpg import MADDPGAgent
 from env import PredatorPreyEnv as EnvTorus
-from env_border_strong import PredatorPreyEnvReflect as EnvReflect
+from env_border_strong import PredatorPreyEnvReflect as EnvWalls  # walls strong (comme tu veux le garder)
 
+# ------------------------------------------------------------
+# Dimensions / config
 
-# -----------------------------
-# Config
-# -----------------------------
-N_SEEDS = 10
-EPISODES = 50
-STEPS_PER_EPISODE = 80
+STATE_DIM = 40
+ACTION_DIM = 2
 
 N_PREDATORS = 3
 N_PREYS = 20
 WORLD_SIZE = 7.0
 
-STATE_DIM = 40
-ACTION_DIM = 2
-
-ACTOR_PATH = "models/actor_predator_shared.pth"
-
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# ------------------------------------------------------------
+# Eval params
 
-# -----------------------------
+K_EPISODES = 100      # nb d'épisodes pour stats
+T_STEPS = 200         # steps par épisode
+NOISE = 0.0           # eval sans exploration
+ACTION_SCALE = 0.3    # comme visualize.py
+SEED0 = 123
+
+# ------------------------------------------------------------
+# Model paths (IMPORTANT: deux modèles différents)
+
+ACTOR_PRED_TORUS_PATH = "models/actor_pred_torus.pth"
+ACTOR_PRED_WALLS_PATH = "models/actor_pred_walls.pth"
+
+# (Optionnel) si tu veux aussi évaluer une policy proie apprise
+ACTOR_PREY_TORUS_PATH = "models/actor_prey_torus.pth"
+ACTOR_PREY_WALLS_PATH = "models/actor_prey_walls.pth"
+
+
+# ------------------------------------------------------------
 # Utils
-# -----------------------------
-def set_all_seeds(seed: int):
-    random.seed(seed)
+
+def set_seed(seed: int):
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
 
-def make_agent(device):
+def safe_reset(env):
+    """
+    Supporte:
+    - reset() -> pred_obs
+    - reset() -> (pred_obs, prey_obs)
+    """
+    out = env.reset()
+    if isinstance(out, tuple) and len(out) == 2:
+        return out[0], out[1]
+    return out, None
+
+
+def safe_step(env, pred_actions, prey_actions=None):
+    """
+    Supporte:
+    - step(pred_actions) -> pred_next_obs, pred_rewards, done, info
+    - step(pred_actions, prey_actions) -> (pred_next_obs, prey_next_obs), (pred_rewards, prey_rewards), done, info
+    """
+    if prey_actions is None:
+        pred_next_obs, pred_rewards, done, info = env.step(pred_actions)
+        return pred_next_obs, None, pred_rewards, None, done, info
+    else:
+        (pred_next_obs, prey_next_obs), (pred_rewards, prey_rewards), done, info = env.step(pred_actions, prey_actions)
+        return pred_next_obs, prey_next_obs, pred_rewards, prey_rewards, done, info
+
+
+def load_agent(actor_path, n_agents):
     agent = MADDPGAgent(
         state_dim=STATE_DIM,
         action_dim=ACTION_DIM,
-        n_agents=N_PREDATORS,
-        device=device
+        n_agents=n_agents,
+        device=DEVICE
     )
-    if not os.path.exists(ACTOR_PATH):
-        raise FileNotFoundError(
-            f"Actor introuvable: {ACTOR_PATH}. Lance train.py avant."
-        )
-    agent.actor.load_state_dict(torch.load(ACTOR_PATH, map_location=device))
+    agent.actor.load_state_dict(torch.load(actor_path, map_location=DEVICE))
     agent.actor.eval()
-
-    # Important : ton MADDPGAgent normalise avec state_mean/state_std.
-    # Comme tu ne les sauvegardes pas dans train.py, on garde les valeurs par défaut
-    # (mean=0, std=1). Ça permet AU MOINS une comparaison "à pression identique"
-    # entre environnements (même acteur, même pipeline).
-    agent.state_mean = torch.zeros(STATE_DIM, device=device)
-    agent.state_std = torch.ones(STATE_DIM, device=device)
     return agent
 
 
-def rollout(env, agent, seed: int):
+def run_eval(env_class, actor_pred_path, use_prey_policy=False, actor_prey_path=None):
     """
-    Retourne:
-    - dos: (EPISODES, STEPS_PER_EPISODE)
-    - doa: (EPISODES, STEPS_PER_EPISODE)
-    - rew: (EPISODES,) reward moyen par épisode (moyenne des prédateurs)
+    Évalue une policy (prédateurs, et optionnellement proies) sur un env.
+    - use_prey_policy=False: on n'envoie pas de prey_actions (proies "scriptées" côté env)
+    - use_prey_policy=True : on charge actor_prey_path et on envoie prey_actions
     """
-    dos = np.zeros((EPISODES, STEPS_PER_EPISODE), dtype=np.float64)
-    doa = np.zeros((EPISODES, STEPS_PER_EPISODE), dtype=np.float64)
-    rew = np.zeros((EPISODES,), dtype=np.float64)
+    env = env_class(n_prey=N_PREYS, n_predators=N_PREDATORS, world_size=WORLD_SIZE)
 
-    for ep in range(EPISODES):
-        # seed fixée -> mêmes tirages reset si on fait pareil dans les 2 env
-        set_all_seeds(seed * 10_000 + ep)  # seed différente par épisode, reproductible
-        obs = env.reset()
+    agent_pred = load_agent(actor_pred_path, n_agents=N_PREDATORS)
 
-        ep_rew = 0.0
-        for t in range(STEPS_PER_EPISODE):
-            actions = np.zeros((N_PREDATORS, ACTION_DIM), dtype=np.float32)
+    agent_prey = None
+    if use_prey_policy:
+        if actor_prey_path is None:
+            raise ValueError("use_prey_policy=True mais actor_prey_path=None")
+        agent_prey = load_agent(actor_prey_path, n_agents=N_PREYS)
+
+    ep_pred_reward = []
+    ep_prey_reward = []
+    ep_dos = []
+    ep_doa = []
+
+    for ep in range(K_EPISODES):
+        set_seed(SEED0 + ep)
+
+        pred_obs, prey_obs = safe_reset(env)
+
+        pred_r_list = []
+        prey_r_list = []
+        dos_list = []
+        doa_list = []
+
+        for _ in range(T_STEPS):
+            # --- predator actions ---
+            pred_actions = np.zeros((N_PREDATORS, ACTION_DIM))
             for i in range(N_PREDATORS):
-                actions[i] = agent.select_action(obs[i], i, noise_scale=0.0)
+                a = agent_pred.select_action(pred_obs[i], noise_scale=NOISE)
+                pred_actions[i] = ACTION_SCALE * a
 
-            next_obs, rewards, done, info = env.step(actions)
-            ep_rew += float(np.mean(rewards))
+            # --- prey actions (optionnel) ---
+            prey_actions = None
+            if use_prey_policy:
+                if prey_obs is None:
+                    raise RuntimeError("use_prey_policy=True mais env.reset() ne renvoie pas prey_obs.")
+                prey_actions = np.zeros((N_PREYS, ACTION_DIM))
+                for j in range(N_PREYS):
+                    a = agent_prey.select_action(prey_obs[j], noise_scale=NOISE)
+                    prey_actions[j] = ACTION_SCALE * a
 
-            dos[ep, t] = float(info.get("DoS", np.nan))
-            doa[ep, t] = float(info.get("DoA", np.nan))
+            pred_next_obs, prey_next_obs, pred_rewards, prey_rewards, done, info = safe_step(
+                env, pred_actions, prey_actions
+            )
 
-            obs = next_obs
+            pred_r_list.append(float(np.mean(pred_rewards)))
+            if prey_rewards is not None:
+                prey_r_list.append(float(np.mean(prey_rewards)))
+
+            dos_list.append(float(info.get("DoS", np.nan)))
+            doa_list.append(float(info.get("DoA", np.nan)))
+
+            pred_obs = pred_next_obs
+            prey_obs = prey_next_obs
+
             if done:
-                # si un jour tu introduis un done=True, on remplit le reste avec NaN
-                dos[ep, t+1:] = np.nan
-                doa[ep, t+1:] = np.nan
                 break
 
-        rew[ep] = ep_rew
+        ep_pred_reward.append(np.nanmean(pred_r_list))
+        ep_dos.append(np.nanmean(dos_list))
+        ep_doa.append(np.nanmean(doa_list))
 
-    return dos, doa, rew
+        if use_prey_policy:
+            ep_prey_reward.append(np.nanmean(prey_r_list) if len(prey_r_list) else np.nan)
 
+    out = {
+        "pred_reward": np.array(ep_pred_reward),
+        "dos": np.array(ep_dos),
+        "doa": np.array(ep_doa),
+    }
+    if use_prey_policy:
+        out["prey_reward"] = np.array(ep_prey_reward)
 
-def mean_std_over_runs(x_list):
-    """
-    x_list: liste de tableaux (EPISODES, STEPS) pour plusieurs seeds
-    On moyenne d'abord sur EPISODES (pour chaque seed), puis sur seeds.
-    """
-    # -> (n_seeds, EPISODES, STEPS)
-    X = np.stack(x_list, axis=0)
-
-    # moyenne par seed (sur EPISODES) => (n_seeds, STEPS)
-    per_seed = np.nanmean(X, axis=1)
-
-    mean = np.nanmean(per_seed, axis=0)
-    std = np.nanstd(per_seed, axis=0)
-    return mean, std
+    return out
 
 
-# -----------------------------
+def summarize(arr):
+    arr = np.asarray(arr, dtype=float)
+    return float(np.nanmean(arr)), float(np.nanstd(arr))
+
+
+def print_block(title, dct, has_prey=False):
+    print(f"\n=== {title} ===")
+    m, s = summarize(dct["pred_reward"])
+    print(f"Pred reward : mean={m:.4f}  std={s:.4f}")
+    m, s = summarize(dct["dos"])
+    print(f"DoS         : mean={m:.4f}  std={s:.4f}")
+    m, s = summarize(dct["doa"])
+    print(f"DoA         : mean={m:.4f}  std={s:.4f}")
+    if has_prey:
+        m, s = summarize(dct["prey_reward"])
+        print(f"Prey reward : mean={m:.4f}  std={s:.4f}")
+
+
+# ------------------------------------------------------------
 # Main
-# -----------------------------
-def main():
-    agent = make_agent(DEVICE)
-
-    torus_dos_runs, torus_doa_runs, torus_rew_runs = [], [], []
-    refl_dos_runs,  refl_doa_runs,  refl_rew_runs  = [], [], []
-
-    for s in range(N_SEEDS):
-        seed = 12345 + s
-
-        # --- Torus ---
-        set_all_seeds(seed)
-        env_t = EnvTorus(
-            n_prey=N_PREYS,
-            n_predators=N_PREDATORS,
-            world_size=WORLD_SIZE
-        )
-        dos_t, doa_t, rew_t = rollout(env_t, agent, seed=seed)
-        torus_dos_runs.append(dos_t)
-        torus_doa_runs.append(doa_t)
-        torus_rew_runs.append(rew_t)
-
-        # --- Reflect (même seed + même protocole) ---
-        set_all_seeds(seed)
-        env_r = EnvReflect(
-            n_prey=N_PREYS,
-            n_predators=N_PREDATORS,
-            world_size=WORLD_SIZE
-        )
-        dos_r, doa_r, rew_r = rollout(env_r, agent, seed=seed)
-        refl_dos_runs.append(dos_r)
-        refl_doa_runs.append(doa_r)
-        refl_rew_runs.append(rew_r)
-
-        print(f"[seed {seed}] done")
-
-    # Courbes DoS(t), DoA(t)
-    torus_dos_mean, torus_dos_std = mean_std_over_runs(torus_dos_runs)
-    torus_doa_mean, torus_doa_std = mean_std_over_runs(torus_doa_runs)
-    refl_dos_mean,  refl_dos_std  = mean_std_over_runs(refl_dos_runs)
-    refl_doa_mean,  refl_doa_std  = mean_std_over_runs(refl_doa_runs)
-
-    t = np.arange(STEPS_PER_EPISODE)
-
-    # --- Plot DoS ---
-    plt.figure(figsize=(10, 4))
-    plt.plot(t, torus_dos_mean, label="Torus (mean)")
-    plt.fill_between(t, torus_dos_mean - torus_dos_std, torus_dos_mean + torus_dos_std, alpha=0.2)
-    plt.plot(t, refl_dos_mean, label="Reflect walls (mean)")
-    plt.fill_between(t, refl_dos_mean - refl_dos_std, refl_dos_mean + refl_dos_std, alpha=0.2)
-    plt.title("DoS(t) – torus vs reflective walls (same predator policy)")
-    plt.xlabel("Step")
-    plt.ylabel("Degree of Sparsity (DoS)")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig("compare_DoS_torus_vs_reflect.png", dpi=200)
-
-    # --- Plot DoA ---
-    plt.figure(figsize=(10, 4))
-    plt.plot(t, torus_doa_mean, label="Torus (mean)")
-    plt.fill_between(t, torus_doa_mean - torus_doa_std, torus_doa_mean + torus_doa_std, alpha=0.2)
-    plt.plot(t, refl_doa_mean, label="Reflect walls (mean)")
-    plt.fill_between(t, refl_doa_mean - refl_doa_std, refl_doa_mean + refl_doa_std, alpha=0.2)
-    plt.title("DoA(t) – torus vs reflective walls (same predator policy)")
-    plt.xlabel("Step")
-    plt.ylabel("Degree of Alignment (DoA)")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig("compare_DoA_torus_vs_reflect.png", dpi=200)
-
-    # --- Résumés scalaires ---
-    # Moyenne temporelle par épisode, puis moyenne sur épisodes, puis sur seeds
-    def summarize_runs(dos_runs, doa_runs, rew_runs):
-        # dos_runs: list of (EPISODES, STEPS)
-        dos_seed = []
-        doa_seed = []
-        rew_seed = []
-        for dos, doa, rew in zip(dos_runs, doa_runs, rew_runs):
-            dos_seed.append(np.nanmean(dos))  # moyenne sur tout (ep, t)
-            doa_seed.append(np.nanmean(doa))
-            rew_seed.append(np.mean(rew))     # reward moyen sur EPISODES
-        return (np.mean(dos_seed), np.std(dos_seed),
-                np.mean(doa_seed), np.std(doa_seed),
-                np.mean(rew_seed), np.std(rew_seed))
-
-    td_m, td_s, ta_m, ta_s, tr_m, tr_s = summarize_runs(torus_dos_runs, torus_doa_runs, torus_rew_runs)
-    rd_m, rd_s, ra_m, ra_s, rr_m, rr_s = summarize_runs(refl_dos_runs,  refl_doa_runs,  refl_rew_runs)
-
-    print("\n=== Summary (mean ± std across seeds) ===")
-    print(f"Torus   : DoS={td_m:.3f} ± {td_s:.3f} | DoA={ta_m:.3f} ± {ta_s:.3f} | Reward={tr_m:.2f} ± {tr_s:.2f}")
-    print(f"Reflect : DoS={rd_m:.3f} ± {rd_s:.3f} | DoA={ra_m:.3f} ± {ra_s:.3f} | Reward={rr_m:.2f} ± {rr_s:.2f}")
-
-    plt.show()
-    print("\nSaved: compare_DoS_torus_vs_reflect.png, compare_DoA_torus_vs_reflect.png")
-
 
 if __name__ == "__main__":
-    main()
+    # Comparaison "propre" de base: prédateurs seulement
+    USE_PREY_POLICY = False
+
+    print("Using TORUS model:", ACTOR_PRED_TORUS_PATH)
+    print("Using WALLS model:", ACTOR_PRED_WALLS_PATH)
+    if USE_PREY_POLICY:
+        print("Using TORUS prey model:", ACTOR_PREY_TORUS_PATH)
+        print("Using WALLS prey model:", ACTOR_PREY_WALLS_PATH)
+
+    tor = run_eval(
+        EnvTorus,
+        actor_pred_path=ACTOR_PRED_TORUS_PATH,
+        use_prey_policy=USE_PREY_POLICY,
+        actor_prey_path=(ACTOR_PREY_TORUS_PATH if USE_PREY_POLICY else None),
+    )
+
+    wal = run_eval(
+        EnvWalls,
+        actor_pred_path=ACTOR_PRED_WALLS_PATH,
+        use_prey_policy=USE_PREY_POLICY,
+        actor_prey_path=(ACTOR_PREY_WALLS_PATH if USE_PREY_POLICY else None),
+    )
+
+    print_block("TORUS", tor, has_prey=USE_PREY_POLICY)
+    print_block("WALLS", wal, has_prey=USE_PREY_POLICY)
+
+    print("\n=== DIFF (WALLS - TORUS) ===")
+    m, s = summarize(wal["pred_reward"] - tor["pred_reward"])
+    print(f"Pred reward : mean={m:.4f}  std={s:.4f}")
+    m, s = summarize(wal["dos"] - tor["dos"])
+    print(f"DoS         : mean={m:.4f}  std={s:.4f}")
+    m, s = summarize(wal["doa"] - tor["doa"])
+    print(f"DoA         : mean={m:.4f}  std={s:.4f}")
+    if USE_PREY_POLICY:
+        m, s = summarize(wal["prey_reward"] - tor["prey_reward"])
+        print(f"Prey reward : mean={m:.4f}  std={s:.4f}")

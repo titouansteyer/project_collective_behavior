@@ -1,6 +1,9 @@
 import numpy as np
 from metrics import degree_of_sparsity, degree_of_alignment
 
+
+
+
 def reflect_positions_and_velocities(pos, vel, L):
     """
     Perfect reflection in a square [0, L]x[0, L] using a 2L wrapping technique.
@@ -17,6 +20,9 @@ def reflect_positions_and_velocities(pos, vel, L):
     vel_ref[:, 0] = np.where(flip_x == 1.0, -vel_ref[:, 0], vel_ref[:, 0])
     vel_ref[:, 1] = np.where(flip_y == 1.0, -vel_ref[:, 1], vel_ref[:, 1])
     return pos_ref, vel_ref
+
+
+
 
 def wall_force_hooke(pos, vel, L, k=50.0, c=2.0):
     """
@@ -106,6 +112,11 @@ class PredatorPreyEnvReflect:
 
         self.reset()
 
+
+
+
+
+
     def reset(self):
         """Random initialize positions & velocities within [0, L] square."""
         self.prey_pos = np.random.rand(self.n_prey, 2) * self.world_size
@@ -121,7 +132,15 @@ class PredatorPreyEnvReflect:
 
         pred_obs = self._get_predator_obs()
         prey_obs = self._get_prey_obs()
+
+
+
         return (pred_obs, prey_obs)
+    
+
+
+
+
     def _get_predator_obs(self) -> np.ndarray:
         """
         Predator observation (40 dims) – same structure as toroidal env (no torus wrapping here).
@@ -165,6 +184,9 @@ class PredatorPreyEnvReflect:
             obs_all.append(np.array(own_state + prey_feat + pred_feat, dtype=float))
         return np.vstack(obs_all)
 
+
+
+
     def _get_prey_obs(self) -> np.ndarray:
         """
         Prey observation (40 dims) – similar structure for each prey.
@@ -207,6 +229,9 @@ class PredatorPreyEnvReflect:
                 pred_feat.extend([0.0, 0.0, 0.0])
             obs_all.append(np.array(own_state + prey_feat + pred_feat, dtype=float))
         return np.vstack(obs_all)
+
+
+
 
     def _compute_prey_directions(self) -> np.ndarray:
         """
@@ -262,6 +287,10 @@ class PredatorPreyEnvReflect:
             norms = np.linalg.norm(directions, axis=1, keepdims=True) + 1e-8
             directions = directions / norms
         return directions
+
+
+
+
 
     def step(self, predator_actions: np.ndarray, prey_actions: np.ndarray = None):
         """
@@ -374,7 +403,7 @@ class PredatorPreyEnvReflect:
 
         
         # collective metrics
-        dos = degree_of_sparsity(self.prey_pos)
+        dos = degree_of_sparsity(self.prey_pos, world_size=self.world_size)
         doa = degree_of_alignment(self.prey_vel)
         info = {"DoS": dos, "DoA": doa}
         done = False
