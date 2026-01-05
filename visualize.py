@@ -7,7 +7,7 @@ from maddpg import MADDPGAgent
 
 # ============================================================
 # CHOIX ICI (MINIMAL)
-MODE = "torus"   # "torus" ou "walls"
+MODE = "walls"   # "torus" ou "walls"
 # ============================================================
 
 if MODE == "torus":

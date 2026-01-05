@@ -90,6 +90,8 @@ class PredatorPreyEnvReflect:
         # wall parameters:
         wall_stiffness: float = 50.0,
         wall_damping: float = 2.0,
+        # reflection
+        pure_reflection: bool = False,
     ):
         self.n_prey = n_prey
         self.n_predators = n_predators
@@ -109,6 +111,8 @@ class PredatorPreyEnvReflect:
 
         self.wall_stiffness = wall_stiffness
         self.wall_damping = wall_damping
+
+        self.pure_reflection = pure_reflection
 
         self.reset()
 
@@ -313,16 +317,26 @@ class PredatorPreyEnvReflect:
             self.prey_vel = np.where(prey_speed > self.prey_speed_limit,
                                       self.prey_vel * (self.prey_speed_limit / prey_speed),
                                       self.prey_vel)
-        # compute new prey position (raw) and apply wall bounce forces
+        # compute new prey position (raw)
         prey_pos_raw = self.prey_pos + self.dt * self.prey_vel
-        fb_prey = wall_force_hooke(prey_pos_raw, self.prey_vel, self.world_size,
-                                   k=self.wall_stiffness, c=self.wall_damping)
-        # update prey velocity and position after wall interactions
-        self.prey_vel = self.prey_vel + self.dt * fb_prey
-        self.prey_pos = self.prey_pos + self.dt * self.prey_vel
-        self.prey_pos, self.prey_vel = reflect_positions_and_velocities(
-        self.prey_pos, self.prey_vel, self.world_size
-    )
+
+        if self.pure_reflection:
+            # murs géométriques purs : pas de force murale
+            self.prey_pos, self.prey_vel = reflect_positions_and_velocities(
+                    prey_pos_raw, self.prey_vel, self.world_size
+            )
+        else:
+            # murs strong : Hooke + damping + reflection
+            fb_prey = wall_force_hooke(
+                prey_pos_raw, self.prey_vel, self.world_size,
+                k=self.wall_stiffness, c=self.wall_damping
+            )
+            self.prey_vel = self.prey_vel + self.dt * fb_prey
+            self.prey_pos = self.prey_pos + self.dt * self.prey_vel
+            self.prey_pos, self.prey_vel = reflect_positions_and_velocities(
+            self.prey_pos, self.prey_vel, self.world_size
+        )
+    
 
 
         # --- Predators update ---
@@ -334,15 +348,25 @@ class PredatorPreyEnvReflect:
         self.pred_vel = np.where(pred_speed > self.pred_speed_limit,
                                   self.pred_vel * (self.pred_speed_limit / pred_speed),
                                   self.pred_vel)
-        # compute new predator position and apply wall forces
+        
+        # compute new predator position (raw)
         pred_pos_raw = self.pred_pos + self.dt * self.pred_vel
-        fb_pred = wall_force_hooke(pred_pos_raw, self.pred_vel, self.world_size,
-                                   k=self.wall_stiffness, c=self.wall_damping)
-        self.pred_vel = self.pred_vel + self.dt * fb_pred
-        self.pred_pos = self.pred_pos + self.dt * self.pred_vel
-        self.pred_pos, self.pred_vel = reflect_positions_and_velocities(
-        self.pred_pos, self.pred_vel, self.world_size
-    )
+
+        if self.pure_reflection:
+            self.pred_pos, self.pred_vel = reflect_positions_and_velocities(
+                pred_pos_raw, self.pred_vel, self.world_size
+            )
+        else:
+            fb_pred = wall_force_hooke(
+                pred_pos_raw, self.pred_vel, self.world_size,
+                k=self.wall_stiffness, c=self.wall_damping
+            )
+            self.pred_vel = self.pred_vel + self.dt * fb_pred
+            self.pred_pos = self.pred_pos + self.dt * self.pred_vel
+            self.pred_pos, self.pred_vel = reflect_positions_and_velocities(
+            self.pred_pos, self.pred_vel, self.world_size
+        )
+    
 
 
         # --- Rewards for predators and prey ---
@@ -359,7 +383,7 @@ class PredatorPreyEnvReflect:
         # ------------------------------------------------------------
         # Wall proximity penalty (prey): penalize being close to walls
         # This prevents "camping" near walls without actually touching them.
-        if prey_actions is not None:
+        if (not self.pure_reflection) and (prey_actions is not None):
             d = np.minimum.reduce([
                 self.prey_pos[:, 0],
                 self.world_size - self.prey_pos[:, 0],
@@ -378,28 +402,29 @@ class PredatorPreyEnvReflect:
         if prey_actions is not None:
             for j in range(self.n_prey):
                 prey_rewards[j] -= 0.01 * np.linalg.norm(prey_actions[j])
-
+        
+        if not self.pure_reflection:
         # apply wall-touch penalty: any agent hitting a wall gets -0.1
-        if self.n_predators > 0:
+            if self.n_predators > 0:
             # check predator raw positions beyond boundaries
-            out_left = pred_pos_raw[:, 0] < 0
-            out_right = pred_pos_raw[:, 0] > self.world_size
-            out_bottom = pred_pos_raw[:, 1] < 0
-            out_top = pred_pos_raw[:, 1] > self.world_size
-            pred_out = out_left | out_right | out_bottom | out_top
-            for i in range(self.n_predators):
-                if pred_out[i]:
-                    pred_rewards[i] -= 0.1
-        if prey_actions is not None and self.n_prey > 0:
+                out_left = pred_pos_raw[:, 0] < 0
+                out_right = pred_pos_raw[:, 0] > self.world_size
+                out_bottom = pred_pos_raw[:, 1] < 0
+                out_top = pred_pos_raw[:, 1] > self.world_size
+                pred_out = out_left | out_right | out_bottom | out_top
+                for i in range(self.n_predators):
+                    if pred_out[i]:
+                        pred_rewards[i] -= 0.1
+            if (not self.pure_reflection) and (prey_actions is not None) and self.n_prey > 0:
             # check prey raw positions beyond boundaries
-            out_left = prey_pos_raw[:, 0] < 0
-            out_right = prey_pos_raw[:, 0] > self.world_size
-            out_bottom = prey_pos_raw[:, 1] < 0
-            out_top = prey_pos_raw[:, 1] > self.world_size
-            prey_out = out_left | out_right | out_bottom | out_top
-            for j in range(self.n_prey):
-                if prey_out[j]:
-                    prey_rewards[j] -= 0.1
+                out_left = prey_pos_raw[:, 0] < 0
+                out_right = prey_pos_raw[:, 0] > self.world_size
+                out_bottom = prey_pos_raw[:, 1] < 0
+                out_top = prey_pos_raw[:, 1] > self.world_size
+                prey_out = out_left | out_right | out_bottom | out_top
+                for j in range(self.n_prey):
+                    if prey_out[j]:
+                        prey_rewards[j] -= 0.1
 
         
         # collective metrics

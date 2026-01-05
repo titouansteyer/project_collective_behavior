@@ -7,7 +7,7 @@ from maddpg import MADDPGAgent
 
 # Choisis l'env :
 #from env import PredatorPreyEnv  # bords infinis (tore)
-#EXP_NAME = "walls"
+#EXP_NAME = "torus"
 from env_border_strong import PredatorPreyEnvReflect as PredatorPreyEnv  # bords solides
 EXP_NAME = "walls"
 
@@ -39,7 +39,7 @@ UPDATE_EVERY = 5
 env = PredatorPreyEnv(
     n_prey=N_PREYS,
     n_predators=N_PREDATORS,
-    world_size=7.0
+    world_size=7.0,
 )
 
 agent_pred = MADDPGAgent(
@@ -187,7 +187,7 @@ plt.title("Predators reward (rolling mean ± std)")
 plt.xlabel("Episode")
 plt.ylabel("Reward")
 plt.tight_layout()
-plt.savefig("predator_reward.png")
+plt.savefig(f"predator_reward_{EXP_NAME}.png")
 plt.show()
 
 # --- Rewards prey (si coevolution) ---
@@ -204,7 +204,7 @@ if "rewards_prey_history" in globals():
     plt.xlabel("Episode")
     plt.ylabel("Reward")
     plt.tight_layout()
-    plt.savefig("prey_reward.png")
+    plt.savefig(f"prey_reward_{EXP_NAME}.png")
     plt.show()
 
 # --- DoS / DoA ---
@@ -223,5 +223,5 @@ plt.title("Collective metrics (smoothed)")
 plt.xlabel("Episode")
 plt.legend()
 plt.tight_layout()
-plt.savefig("collective_metrics.png")
+plt.savefig(f"collective_metrics_{EXP_NAME}.png")
 plt.show()
