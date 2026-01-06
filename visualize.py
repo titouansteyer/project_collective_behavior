@@ -45,6 +45,7 @@ clock = pygame.time.Clock()
 # IMPORTANT: mets les mêmes paramètres que le training (world_size, n_prey, n_predators)
 env = PredatorPreyEnv(world_size=7.0, n_prey=40, n_predators=3)
 
+
 # reset renvoie parfois pred_obs seul (torus simple) OU (pred_obs, prey_obs)
 out = env.reset()
 if isinstance(out, tuple) and len(out) == 2:
@@ -120,14 +121,16 @@ for step in range(N_STEPS):
     # --- Step env (coevolution) ---
     # Certains envs (torus) peuvent aussi accepter prey_actions, d'autres non.
     # On essaie coevolution, sinon fallback predators-only.
-    try:
-        (pred_obs, prey_obs), (rew_pred, rew_prey), done, info = env.step(pred_actions, prey_actions)
-    except TypeError:
-        # fallback: env sans coevolution
+    if getattr(env, "prey_mode", "rl") == "couzin":
+    # predators-only
         pred_obs, rew_pred, done, info = env.step(pred_actions)
-        # on reconstruit prey_obs si possible
+        rew_prey = None
         if hasattr(env, "_get_prey_obs"):
             prey_obs = env._get_prey_obs()
+    else:
+    # coevolution
+        (pred_obs, prey_obs), (rew_pred, rew_prey), done, info = env.step(pred_actions, prey_actions)
+
 
     # --- Render ---
     screen.fill((255, 255, 255))

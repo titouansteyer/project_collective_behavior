@@ -92,6 +92,9 @@ class PredatorPreyEnvReflect:
         wall_damping: float = 2.0,
         # reflection
         pure_reflection: bool = False,
+        # couzin / RL
+        prey_mode: str = "couzin"  # "couzin" or "rl"
+        
     ):
         self.n_prey = n_prey
         self.n_predators = n_predators
@@ -113,6 +116,9 @@ class PredatorPreyEnvReflect:
         self.wall_damping = wall_damping
 
         self.pure_reflection = pure_reflection
+
+        assert prey_mode in ["couzin", "rl"], "prey_mode must be 'couzin' or 'rl'"
+        self.prey_mode = prey_mode
 
         self.reset()
 
@@ -304,19 +310,24 @@ class PredatorPreyEnvReflect:
         if prey_actions is not None:
             prey_actions = np.asarray(prey_actions, dtype=float)
 
-        # --- Prey update ---
-        if prey_actions is None:
-            # apply Couzin rules for prey movement
+        #--- Prey update ---
+        if self.prey_mode == "couzin":
             new_dirs = self._compute_prey_directions()
             self.prey_vel = self.prey_speed_limit * new_dirs
-        else:
-            # prey RL control
+
+        elif self.prey_mode == "rl":
+            if prey_actions is None:
+                raise RuntimeError("prey_mode='rl' mais prey_actions=None")
             self.prey_vel += self.dt * prey_actions
             self.prey_vel *= (1.0 - self.friction * self.dt)
             prey_speed = np.linalg.norm(self.prey_vel, axis=1, keepdims=True) + 1e-8
-            self.prey_vel = np.where(prey_speed > self.prey_speed_limit,
-                                      self.prey_vel * (self.prey_speed_limit / prey_speed),
-                                      self.prey_vel)
+            self.prey_vel = np.where(
+                prey_speed > self.prey_speed_limit,
+                self.prey_vel * (self.prey_speed_limit / prey_speed),
+                self.prey_vel
+            )
+
+
         # compute new prey position (raw)
         prey_pos_raw = self.prey_pos + self.dt * self.prey_vel
 
@@ -436,7 +447,7 @@ class PredatorPreyEnvReflect:
         # observations for next state
         pred_obs = self._get_predator_obs()
         prey_obs = self._get_prey_obs()
-        if prey_actions is None:
+        if self.prey_mode == "couzin":
             return pred_obs, pred_rewards, done, info
         else:
             return (pred_obs, prey_obs), (pred_rewards, prey_rewards), done, info

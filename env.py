@@ -32,6 +32,7 @@ class PredatorPreyEnv:
         k_neighbors: int = 6,
         # predator avoidance radius for prey:
         predator_influence_radius: float = 2.0,
+        prey_mode: str = "couzin",  # "couzin" or "rl"
     ):
         self.n_prey = n_prey
         self.n_predators = n_predators
@@ -51,6 +52,9 @@ class PredatorPreyEnv:
 
         # (unused) global perception radius set equal to world_size
         self.perception_radius = world_size
+
+        assert prey_mode in ["couzin", "rl"], "prey_mode must be 'couzin' or 'rl'"
+        self.prey_mode = prey_mode
 
         self.reset()
 
@@ -272,20 +276,23 @@ class PredatorPreyEnv:
         if prey_actions is not None:
             prey_actions = np.asarray(prey_actions, dtype=float)
 
-        # --- Prey update ---
-        if prey_actions is None:
-            # Prey follow programmed flocking rules
+         #--- Prey update ---
+        if self.prey_mode == "couzin":
             new_dirs = self._compute_prey_directions()
             self.prey_vel = self.prey_speed_limit * new_dirs
-        else:
-            # Prey controlled by RL actions
+
+        elif self.prey_mode == "rl":
+            if prey_actions is None:
+                raise RuntimeError("prey_mode='rl' mais prey_actions=None")
             self.prey_vel += self.dt * prey_actions
             self.prey_vel *= (1.0 - self.friction * self.dt)
             prey_speed = np.linalg.norm(self.prey_vel, axis=1, keepdims=True) + 1e-8
-            # clamp prey speed to max limit
-            self.prey_vel = np.where(prey_speed > self.prey_speed_limit,
-                                      self.prey_vel * (self.prey_speed_limit / prey_speed),
-                                      self.prey_vel)
+            self.prey_vel = np.where(
+                prey_speed > self.prey_speed_limit,
+                self.prey_vel * (self.prey_speed_limit / prey_speed),
+                self.prey_vel
+            )
+
         # move prey (wrap around world edges)
         self.prey_pos = (self.prey_pos + self.dt * self.prey_vel) % self.world_size
 
@@ -336,9 +343,7 @@ class PredatorPreyEnv:
         pred_obs = self._get_predator_obs()
         prey_obs = self._get_prey_obs()
 
-        if prey_actions is None:
-            # return predators' observation and rewards only
+        if self.prey_mode == "couzin":
             return pred_obs, pred_rewards, done, info
         else:
-            # return both predators' and prey's observations and rewards
             return (pred_obs, prey_obs), (pred_rewards, prey_rewards), done, info
