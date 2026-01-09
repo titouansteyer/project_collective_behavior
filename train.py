@@ -7,10 +7,10 @@ from maddpg import MADDPGAgent
 
 # ============================================================
 # Choisis l'env :
-# from env import PredatorPreyEnv  # bords infinis (tore)
-# EXP_NAME = "torus"
-from env_border_strong import PredatorPreyEnvReflect as PredatorPreyEnv  # bords solides
-EXP_NAME = "walls"
+from env import PredatorPreyEnv  # bords infinis (tore)
+EXP_NAME = "torus"
+#from env_border_strong import PredatorPreyEnvReflect as PredatorPreyEnv  # bords solides
+#EXP_NAME = "walls"
 # ============================================================
 
 # ------------------------------------------------------------
@@ -35,6 +35,11 @@ NOISE_PREY = 0.15
 WARMUP_STEPS = 2000
 UPDATE_EVERY = 5
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(BASE_DIR, "train_outputs")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+
 # ------------------------------------------------------------
 # Initialization
 
@@ -42,7 +47,7 @@ env = PredatorPreyEnv(
     n_prey=N_PREYS,
     n_predators=N_PREDATORS,
     world_size=7.0,
-    prey_mode="couzin"  # "couzin" ou "rl"
+    prey_mode="rl"  # "couzin" ou "rl"
 )
 
 agent_pred = MADDPGAgent(
@@ -51,6 +56,7 @@ agent_pred = MADDPGAgent(
     n_agents=N_PREDATORS,
     device=DEVICE
 )
+
 
 # On ne crée/entraîne agent_prey que si on est en coevolution RL
 agent_prey = None
@@ -220,7 +226,12 @@ plt.title("Predators reward (rolling mean ± std)")
 plt.xlabel("Episode")
 plt.ylabel("Reward")
 plt.tight_layout()
-plt.savefig(f"predator_reward_{EXP_NAME}_{env.prey_mode}.png")
+plt.savefig(
+    os.path.join(
+        OUTPUT_DIR,
+        f"predator_reward_{EXP_NAME}_{env.prey_mode}.png"
+    )
+)
 plt.show()
 
 # --- Rewards prey (si coevolution) ---
@@ -237,7 +248,8 @@ if env.prey_mode == "rl":
     plt.xlabel("Episode")
     plt.ylabel("Reward")
     plt.tight_layout()
-    plt.savefig(f"prey_reward_{EXP_NAME}_{env.prey_mode}.png")
+    plt.savefig(
+    os.path.join(OUTPUT_DIR,f"prey_reward_{EXP_NAME}_{env.prey_mode}.png"))
     plt.show()
 
 # --- DoS / DoA ---
@@ -256,5 +268,6 @@ plt.title("Collective metrics (smoothed)")
 plt.xlabel("Episode")
 plt.legend()
 plt.tight_layout()
-plt.savefig(f"collective_metrics_{EXP_NAME}_{env.prey_mode}.png")
+plt.savefig(os.path.join(OUTPUT_DIR, f"collective_metrics_{EXP_NAME}_{env.prey_mode}.png"))
 plt.show()
+

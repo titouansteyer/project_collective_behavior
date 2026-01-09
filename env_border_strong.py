@@ -93,7 +93,7 @@ class PredatorPreyEnvReflect:
         # reflection
         pure_reflection: bool = False,
         # couzin / RL
-        prey_mode: str = "couzin"  # "couzin" or "rl"
+        prey_mode: str = "rl"  # "couzin" or "rl"
         
     ):
         self.n_prey = n_prey
