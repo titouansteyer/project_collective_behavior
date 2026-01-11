@@ -109,8 +109,32 @@ project_collective_behavior/
 ## Installation
 
 ### Requirements
-- Python 3.10+  
-- Recommended: virtual environment (`venv` or `conda`)
+System requirements : 
+- **Python ≥ 3.10**
+- Linux or macOS recommended (tested on Ubuntu 22.04)
+- Optional but recommended: GPU with CUDA support
+
+Python dependencies : 
+The project relies on the following Python packages:
+
+- `numpy`
+- `torch` (PyTorch ≥ 2.0)
+- `matplotlib`
+- `pygame`
+- `imageio`
+
+Optional (for smoother development):
+- `tqdm`
+- `jupyter`
+
+### Installation (recommended)
+We strongly recommend using a virtual environment.
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
 
 ### Setup
 
