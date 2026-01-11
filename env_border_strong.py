@@ -73,7 +73,7 @@ class PredatorPreyEnvReflect:
         self,
         n_prey: int = 20,
         n_predators: int = 3,
-        world_size: float = 10.0,
+        world_size: float = 2.0,
         dt: float = 0.1,
         prey_speed_limit: float = 0.6,
         pred_speed_limit: float = 0.8,
@@ -402,7 +402,7 @@ class PredatorPreyEnvReflect:
                 self.world_size - self.prey_pos[:, 1],
             ])
 
-            d0 = 1.0
+            d0 = 0.3
             wall_penalty = 0.2 * np.clip((d0 - d) / d0, 0.0, 1.0)
             prey_rewards -= wall_penalty
 

@@ -2,12 +2,13 @@ import pygame
 import numpy as np
 import imageio.v2 as imageio
 import torch
+import matplotlib.pyplot as plt
 
 from maddpg import MADDPGAgent
 
 # ============================================================
 # CHOIX ICI (MINIMAL)
-MODE = "torus"        # "torus" ou "walls"
+MODE = "walls"        # "torus" ou "walls"
 PREY_MODE = "rl"  # "couzin" ou "rl"
 # ============================================================
 
@@ -43,6 +44,14 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 clock = pygame.time.Clock()
+
+
+#print
+dos_hist = []
+doa_hist = []
+steps_hist = []
+
+
 
 # IMPORTANT: mêmes paramètres que le training
 env = PredatorPreyEnv(world_size=7.0, n_prey=40, n_predators=3, prey_mode=PREY_MODE)
@@ -124,8 +133,21 @@ for step in range(N_STEPS):
             prey_actions[j] = ACTION_SCALE_PREY * a
 
         (pred_obs, prey_obs), (rew_pred, rew_prey), done, info = env.step(pred_actions, prey_actions)
+        dos = info.get("DoS", np.nan)
+        doa = info.get("DoA", np.nan)
+
+        steps_hist.append(step)
+        dos_hist.append(dos)
+        doa_hist.append(doa)
+
     else:
         pred_obs, rew_pred, done, info = env.step(pred_actions)
+        dos = info.get("DoS", np.nan)
+        doa = info.get("DoA", np.nan)
+
+        steps_hist.append(step)
+        dos_hist.append(dos)
+        doa_hist.append(doa)
         rew_prey = None
         if hasattr(env, "_get_prey_obs"):
             prey_obs = env._get_prey_obs()
@@ -164,6 +186,7 @@ for step in range(N_STEPS):
 
     pygame.display.flip()
 
+
     # capture frame
     arr = pygame.surfarray.array3d(screen)
     frame = np.transpose(arr, (1, 0, 2))
@@ -175,3 +198,19 @@ pygame.quit()
 print("Saving GIF...")
 imageio.mimsave(OUTPUT_GIF, frames, fps=FPS)
 print(f"GIF saved as {OUTPUT_GIF}")
+
+print("Plotting DoS / DoA...")
+plt.figure()
+plt.plot(steps_hist, dos_hist, label="DoS")
+plt.plot(steps_hist, doa_hist, label="DoA")
+plt.xlabel("Step")
+plt.ylabel("Metric value")
+plt.title(f"Collective metrics (MODE={MODE}, PREY_MODE={PREY_MODE})")
+plt.legend()
+plt.tight_layout()
+
+plot_name = f"metrics_{MODE}_{PREY_MODE}.png"
+plt.savefig(plot_name, dpi=200)
+plt.show()
+print(f"Saved plot as {plot_name}")
+

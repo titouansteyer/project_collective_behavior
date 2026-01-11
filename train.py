@@ -7,10 +7,10 @@ from maddpg import MADDPGAgent
 
 # ============================================================
 # Choisis l'env :
-from env import PredatorPreyEnv  # bords infinis (tore)
-EXP_NAME = "torus"
-#from env_border_strong import PredatorPreyEnvReflect as PredatorPreyEnv  # bords solides
-#EXP_NAME = "walls"
+#from env import PredatorPreyEnv  # bords infinis (tore)
+#EXP_NAME = "torus"
+from env_border_strong import PredatorPreyEnvReflect as PredatorPreyEnv  # bords solides
+EXP_NAME = "walls"
 # ============================================================
 
 # ------------------------------------------------------------
@@ -46,8 +46,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 env = PredatorPreyEnv(
     n_prey=N_PREYS,
     n_predators=N_PREDATORS,
-    world_size=7.0,
-    prey_mode="rl"  # "couzin" ou "rl"
+    world_size=2.0,
+    prey_mode="rl"  # "couzin" or "rl"
 )
 
 agent_pred = MADDPGAgent(
@@ -253,21 +253,21 @@ if env.prey_mode == "rl":
     plt.show()
 
 # --- DoS / DoA ---
-dos = np.array(DoS_values, dtype=float)
-doa = np.array(DoA_values, dtype=float)
+#dos = np.array(DoS_values, dtype=float)
+#doa = np.array(DoA_values, dtype=float)
 
-dos_m = rolling_mean(dos, W)
-doa_m = rolling_mean(doa, W)
-x = np.arange(len(dos_m))
+#dos_m = rolling_mean(dos, W)
+#doa_m = rolling_mean(doa, W)
+#x = np.arange(len(dos_m))
 
-plt.figure(figsize=(10, 4))
-plt.plot(x, dos_m, label="DoS (smoothed)")
-plt.plot(x, doa_m, label="DoA (smoothed)")
-plt.ylim(0, 1)
-plt.title("Collective metrics (smoothed)")
-plt.xlabel("Episode")
-plt.legend()
-plt.tight_layout()
-plt.savefig(os.path.join(OUTPUT_DIR, f"collective_metrics_{EXP_NAME}_{env.prey_mode}.png"))
-plt.show()
+#plt.figure(figsize=(10, 4))
+#plt.plot(x, dos_m, label="DoS (smoothed)")
+#plt.plot(x, doa_m, label="DoA (smoothed)")
+#plt.ylim(0, 1)
+#plt.title("Collective metrics (smoothed)")
+#plt.xlabel("Episode")
+#plt.legend()
+#plt.tight_layout()
+#plt.savefig(os.path.join(OUTPUT_DIR, f"collective_metrics_{EXP_NAME}_{env.prey_mode}.png"))
+#plt.show()
 
