@@ -248,8 +248,8 @@ for step in range(N_STEPS):
 
 pygame.quit()
 print("Saving GIF...")
-#imageio.mimsave(OUTPUT_GIF, frames, fps=FPS)
-#print(f"GIF saved as {OUTPUT_GIF}")
+imageio.mimsave(OUTPUT_GIF, frames, fps=FPS)
+print(f"GIF saved as {OUTPUT_GIF}")
 
 print("Plotting DoS / DoA...")
 
