@@ -1,45 +1,50 @@
 # project_collective_behavior
 
-## Project Description
 This project is part of the **Collective Behaviour course at the Faculty of Computer Science.**.  
 Our goal is to study and expand upon existing models of **collective animal behaviour**.
 
 ## Project Overview
-This repository implements a predator–prey multi-agent system inspired by Li et al. (2023), with the goal of analysing how collective behaviours emerge under survival pressure.
+This repository implements a predator–prey multi-agent system inspired by Li et al. (2023), with the objective of studying how collective behaviours emerge under survival pressure.
 
-The project is organised around three main components:
+Our implementation focuses on three core aspects:
 
 - **Environment**  
-  A 2D continuous predator–prey environment, implemented both as:
-  - a **toroidal world** (infinite periodic space),
-  - a **bounded world with walls**, including physical wall interactions.
+  A 2D continuous predator–prey environment, available in two configurations:
+  - a **toroidal world** (periodic boundary conditions),
+  - a **bounded world with walls**, including different wall interaction regimes.
 
 - **Learning framework**  
-  Predators (and optionally prey) are trained using **Multi-Agent Deep Deterministic Policy Gradient (MADDPG)**.
-  The reward structure is minimal and purely survival-based.
+  Agents are trained using **Multi-Agent Deep Deterministic Policy Gradient (MADDPG)**.
+  Predators are always controlled via reinforcement learning, while prey can either:
+  - follow **Couzin-style deterministic interaction rules**, or
+  - be trained via **reinforcement learning** in a co-evolution setting.
 
 - **Analysis and visualisation**  
-  Emergent collective behaviours are analysed using:
+  Emergent behaviours are quantitatively analysed using collective metrics such as:
   - Degree of Sparsity (DoS),
   - Degree of Alignment (DoA),
-  and visualised through animated simulations.
+  and qualitatively explored through animated visualisations of the simulations.
 
-The framework allows us to compare:
-- torus vs bounded environments,
-- prey controlled by **Couzin-style rules** vs **reinforcement learning**,
-- and different wall interaction regimes.
+This framework allows systematic comparisons between:
+- toroidal and bounded environments,
+- rule-based prey (Couzin) and learning-based prey (RL),
+- different boundary interaction models.
 
-We use as a starting point the paper:  
-*Predator–prey survival pressure is sufficient to evolve swarming behaviors*  
-[New Journal of Physics, 25 (2023) 093024](https://iopscience.iop.org/article/10.1088/1367-2630/acf33a)
+The project builds upon the following reference work:  
+*Predator–prey survival pressure is sufficient to evolve swarming behaviors* [New Journal of Physics, 25 (2023) 093024](https://iopscience.iop.org/article/10.1088/1367-2630/acf33a)
 
 ## Summary of the paper
-This paper explores how complex collective behaviors such as flocking and swirling can emerge purely from survival dynamics, without any predefined social rules.
-Li et al. (2023) propose a minimal predator–prey co-evolution framework using multi-agent reinforcement learning (MARL).
-Agents (predators and prey) receive only a simple survival-based reward: predators gain +1 when catching prey, and prey receive −1 when caught.
-Despite this minimal setup, the system naturally evolves rich emergent behaviors — prey develop cohesive flocking and swirling, while predators exhibit dispersion tactics, confusion effects, and edge predation.
-The authors measure these phenomena using quantitative metrics such as the Degree of Sparsity (DoS) and Degree of Alignment (DoA), showing that survival pressure alone is sufficient to produce coordinated group motion.
-This framework provides valuable insights into the evolution of collective animal behavior and offers a foundation for swarm robotics research.
+Li et al. (2023) investigate how complex collective behaviours such as flocking, milling, and swirling can emerge purely from survival-driven interactions, without explicitly programmed social rules.
+
+The authors propose a minimal predator–prey co-evolution framework based on multi-agent reinforcement learning.  
+Predators receive a positive reward when catching prey, while prey receive a negative reward when caught. No explicit incentives for cohesion, alignment, or dispersion are provided.
+
+Despite this simplicity, the system gives rise to rich emergent dynamics. Prey develop cohesive group structures that reduce predation risk, while predators exhibit coordinated hunting strategies, including dispersion and edge-focused attacks.
+
+These behaviours are quantified using collective metrics such as the Degree of Sparsity (DoS) and the Degree of Alignment (DoA), demonstrating that survival pressure alone can be sufficient to generate coordinated group motion.  
+This work provides a compelling perspective on the emergence of collective animal behaviour and serves as a foundation for both biological modelling and swarm robotics research.
+
+
 
 ## Team Members
 -  Rafaëlle Lacraz [rafaellelac](https://github.com/rafaellelac)
@@ -68,6 +73,7 @@ project_collective_behavior/
 │   └── simulation_walls_*.gif
 │
 ├── README.md
+```
 
 ##  Project Plan
 ### **Milestone 1 — First Report**
@@ -114,7 +120,6 @@ cd project_collective_behavior
 ```
 
 ## How to Run : Visualisation 
-```markdown
 ## Visualisation Configuration
 
 The script `visualize.py` allows you to generate animated simulations (GIFs) of trained models.
@@ -125,6 +130,8 @@ At the top of `visualize.py`, you can select the environment:
 ```python
 MODE = "torus"   # "torus" or "walls"
 PREY_MODE = "couzin"  # "couzin" or "rl"
+```
 
 ```bash
 python3 visualize.py
+```
