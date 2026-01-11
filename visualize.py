@@ -31,8 +31,8 @@ from maddpg import MADDPGAgent
 # ============================================================
 # User choices (minimal configuration)
 
-MODE = "torus"      # "torus" or "walls"
-PREY_MODE = "couzin"    # "couzin" or "rl"
+MODE = "walls"      # "torus" or "walls"
+PREY_MODE = "rl"    # "couzin" or "rl"
 
 # ============================================================
 
@@ -252,22 +252,25 @@ print("Saving GIF...")
 #print(f"GIF saved as {OUTPUT_GIF}")
 
 print("Plotting DoS / DoA...")
-def moving_average(x, window=20):
-    x = np.asarray(x, dtype=float)
-    if len(x) < window:
-        return x
-    return np.convolve(x, np.ones(window) / window, mode="valid")
 
-w = 30  # largeur de lissage (20–50 marche bien)
+
+def moving_average(x, window=30):
+    x = np.asarray(x, dtype=float)
+    if window < 2:
+        return x
+    kernel = np.ones(window) / window
+    return np.convolve(x, kernel, mode="valid")
+
+w = 30
 
 dos_smooth = moving_average(dos_hist, w)
 doa_smooth = moving_average(doa_hist, w)
 
 steps_smooth = steps_hist[w-1:]
 
-plt.figure()
-plt.plot(steps_smooth, dos_smooth, linewidth=2, label=f"DoS")
-plt.plot(steps_smooth, doa_smooth, linewidth=2, label=f"DoA")
+plt.figure(figsize=(12, 4))
+plt.plot(steps_smooth, dos_smooth, linewidth=2, label="DoS")
+plt.plot(steps_smooth, doa_smooth, linewidth=2, label="DoA")
 plt.xlabel("Step")
 plt.ylabel("Metric value")
 plt.title(f"Collective metrics (MODE={MODE}, PREY_MODE={PREY_MODE})")
@@ -276,4 +279,4 @@ plt.legend()
 plot_name = f"metrics_{MODE}_{PREY_MODE}.png"
 plt.savefig(plot_name, dpi=200)
 plt.show()
-print(f"Saved plot as {plot_name}")
+
