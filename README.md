@@ -22,7 +22,6 @@ This framework provides valuable insights into the evolution of collective anima
 
 ##  Project Plan
 ### **Milestone 1 — First Report**
-In the first phase, we will:  
 - Read and summarize **Li et al. (2023)** and related work on collective behavior.  
 - Reproduce the **baseline predator–prey MARL model** using  
   [`xxnnnnn/PredatorPrey_RL_Reproduction`](https://github.com/xxnnnnn/PredatorPrey_RL_Reproduction).  
@@ -38,19 +37,22 @@ In the first phase, we will:
 - Investigate the effect of simple parameters, such as the number of predators/prey or the observation radius.  
 
 ### **Milestone 3 — Final Report**
-- Produce the **final polished report** (≤ 4 pages / 2000 words).
-- Compare baseline, deterministic rules, and trained behaviours using DoS/DoA.
-- Compare baseline and extended models (quantitative DoS/DoA results).  
-- Discuss limitations and propose future work (speed differences, obstacles, scalability).
-- Prepare and attach **presentation slides** (≤ 20 min).  
-- Finalize GitHub: cleaned structure, clear README, and run instructions.  
+- Produce the final polished report (≤ 4 pages / 2000 words).
+- Compare:
+  - Torus vs bounded environments (walls).
+  - Prey controlled by Couzin rules vs RL.
+- Discuss limitations and future work (obstacles, scalability, heterogeneous speeds).
+- Prepare presentation slides (≤ 20 minutes).
+- Finalise GitHub repository (clean structure, reproducibility).
   
 ##  Deadlines / Milestones
 - **Report 1**: 2025-11-16  
 - **Report 2**: 2025-12-07
 - **Final Report**: 2026-01-11
 
+
 ## Installation
+
 ### Requirements
 - Python 3.10+  
 - Recommended: virtual environment (`venv` or `conda`)
