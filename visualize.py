@@ -31,8 +31,8 @@ from maddpg import MADDPGAgent
 # ============================================================
 # User choices (minimal configuration)
 
-MODE = "walls"      # "torus" or "walls"
-PREY_MODE = "rl"    # "couzin" or "rl"
+MODE = "torus"      # "torus" or "walls"
+PREY_MODE = "couzin"    # "couzin" or "rl"
 
 # ============================================================
 
@@ -248,18 +248,30 @@ for step in range(N_STEPS):
 
 pygame.quit()
 print("Saving GIF...")
-imageio.mimsave(OUTPUT_GIF, frames, fps=FPS)
-print(f"GIF saved as {OUTPUT_GIF}")
+#imageio.mimsave(OUTPUT_GIF, frames, fps=FPS)
+#print(f"GIF saved as {OUTPUT_GIF}")
 
 print("Plotting DoS / DoA...")
+def moving_average(x, window=20):
+    x = np.asarray(x, dtype=float)
+    if len(x) < window:
+        return x
+    return np.convolve(x, np.ones(window) / window, mode="valid")
+
+w = 30  # largeur de lissage (20–50 marche bien)
+
+dos_smooth = moving_average(dos_hist, w)
+doa_smooth = moving_average(doa_hist, w)
+
+steps_smooth = steps_hist[w-1:]
+
 plt.figure()
-plt.plot(steps_hist, dos_hist, label="DoS")
-plt.plot(steps_hist, doa_hist, label="DoA")
+plt.plot(steps_smooth, dos_smooth, linewidth=2, label=f"DoS")
+plt.plot(steps_smooth, doa_smooth, linewidth=2, label=f"DoA")
 plt.xlabel("Step")
 plt.ylabel("Metric value")
 plt.title(f"Collective metrics (MODE={MODE}, PREY_MODE={PREY_MODE})")
 plt.legend()
-plt.tight_layout()
 
 plot_name = f"metrics_{MODE}_{PREY_MODE}.png"
 plt.savefig(plot_name, dpi=200)
