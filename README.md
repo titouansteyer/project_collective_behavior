@@ -120,7 +120,6 @@ cd project_collective_behavior
 ```
 
 ## How to Run : Visualisation 
-## Visualisation Configuration
 
 The script `visualize.py` allows you to generate animated simulations (GIFs) of trained models.
 
