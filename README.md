@@ -1,4 +1,4 @@
-# project_collective_behavior
+# Project_collective_behavior
 
 This project is part of the **Collective Behaviour course at the Faculty of Computer Science.**.  
 Our goal is to study and expand upon existing models of **collective animal behaviour**.
