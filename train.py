@@ -1,3 +1,22 @@
+"""
+train.py
+
+Training script for predator–prey collective behavior using a MADDPG-style algorithm.
+
+This script:
+- Trains predator agents (and optionally prey agents) in a 2D environment
+- Supports two environments:
+    * Toroidal world (periodic boundaries)
+    * Bounded world with strong reflective walls
+- Supports two prey modes:
+    * "couzin": rule-based prey behavior
+    * "rl": learned prey behavior (coevolution)
+- Logs episode rewards and collective behavior metrics (DoS, DoA)
+- Saves trained actor models and training curves
+
+This file is intended for long training runs and offline analysis.
+"""
+
 import os
 import numpy as np
 import torch
@@ -6,11 +25,15 @@ import matplotlib.pyplot as plt
 from maddpg import MADDPGAgent
 
 # ============================================================
-# Choisis l'env :
-#from env import PredatorPreyEnv  # bords infinis (tore)
-#EXP_NAME = "torus"
-from env_border_strong import PredatorPreyEnvReflect as PredatorPreyEnv  # bords solides
+# Environment selection
+# Uncomment ONE of the following blocks
+
+# from env import PredatorPreyEnv  # infinite borders (torus)
+# EXP_NAME = "torus"
+
+from env_border_strong import PredatorPreyEnvReflect as PredatorPreyEnv  # solid walls
 EXP_NAME = "walls"
+
 # ============================================================
 
 # ------------------------------------------------------------
@@ -20,25 +43,24 @@ EPISODES = 500
 STEPS_PER_EPISODE = 100
 
 N_PREDATORS = 3
-N_PREYS = 10  # comme Li pendant training (ensuite tu peux tester avec 50 en eval)
+N_PREYS = 10  # same as Li et al. during training
 
 STATE_DIM = 40
 ACTION_DIM = 2
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Exploration
+# Exploration noise
 NOISE_PRED = 0.15
 NOISE_PREY = 0.15
 
-# fréquence d'update
+# Update schedule
 WARMUP_STEPS = 2000
 UPDATE_EVERY = 5
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, "train_outputs")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-
 
 # ------------------------------------------------------------
 # Initialization
@@ -57,8 +79,7 @@ agent_pred = MADDPGAgent(
     device=DEVICE
 )
 
-
-# On ne crée/entraîne agent_prey que si on est en coevolution RL
+# Create and train prey agent only if prey is controlled by RL
 agent_prey = None
 if getattr(env, "prey_mode", "rl") == "rl":
     agent_prey = MADDPGAgent(
@@ -74,13 +95,17 @@ DoS_values, DoA_values = [], []
 total_steps = 0
 
 # ------------------------------------------------------------
-# Helper: safe unpack reset output
+# Helper: robust environment reset
 
 def reset_env():
+    """
+    Reset the environment with compatibility for different reset signatures.
+
+    Supports:
+    - reset() -> (pred_obs, prey_obs)
+    - reset() -> pred_obs (legacy), in which case prey_obs is retrieved separately
+    """
     out = env.reset()
-    # On accepte:
-    # - (pred_obs, prey_obs)
-    # - pred_obs seul (ancien env), auquel cas on récupère prey_obs via méthode privée si dispo
     if isinstance(out, tuple) and len(out) == 2:
         return out[0], out[1]
     else:
@@ -88,9 +113,10 @@ def reset_env():
         if hasattr(env, "_get_prey_obs"):
             prey_obs = env._get_prey_obs()
         else:
-            raise RuntimeError("Env reset() ne renvoie pas prey_obs et env._get_prey_obs() absent.")
+            raise RuntimeError(
+                "Env reset() does not return prey_obs and env._get_prey_obs() is missing."
+            )
         return pred_obs, prey_obs
-
 
 # ------------------------------------------------------------
 # Training loop
@@ -103,49 +129,56 @@ for episode in range(EPISODES):
     last_metrics = {}
 
     for step in range(STEPS_PER_EPISODE):
-        # --- Actions predators ---
+        # --- Predator actions ---
         pred_actions = np.zeros((N_PREDATORS, ACTION_DIM))
         for i in range(N_PREDATORS):
-            pred_actions[i] = agent_pred.select_action(pred_obs[i], noise_scale=NOISE_PRED)
+            pred_actions[i] = agent_pred.select_action(
+                pred_obs[i], noise_scale=NOISE_PRED
+            )
 
         if env.prey_mode == "rl":
-            # --- Actions prey (RL) ---
+            # --- Prey actions (RL) ---
             prey_actions = np.zeros((N_PREYS, ACTION_DIM))
             for j in range(N_PREYS):
-                prey_actions[j] = agent_prey.select_action(prey_obs[j], noise_scale=NOISE_PREY)
+                prey_actions[j] = agent_prey.select_action(
+                    prey_obs[j], noise_scale=NOISE_PREY
+                )
 
-            # --- Env step (coevolution) ---
+            # --- Environment step (coevolution) ---
             (pred_next_obs, prey_next_obs), (pred_rewards, prey_rewards), done, metrics = env.step(
                 pred_actions, prey_actions
             )
 
-            # --- Store transitions (1 transition per agent) ---
-            agent_pred.store_transition(pred_obs, pred_actions, pred_rewards, pred_next_obs)
-            agent_prey.store_transition(prey_obs, prey_actions, prey_rewards, prey_next_obs)
+            # --- Store transitions ---
+            agent_pred.store_transition(
+                pred_obs, pred_actions, pred_rewards, pred_next_obs
+            )
+            agent_prey.store_transition(
+                prey_obs, prey_actions, prey_rewards, prey_next_obs
+            )
 
             pred_obs = pred_next_obs
             prey_obs = prey_next_obs
-
             ep_prey_reward += float(np.mean(prey_rewards))
 
         else:
-            # --- Env step (Couzin prey) : predators-only ---
+            # --- Environment step (Couzin prey) ---
             pred_next_obs, pred_rewards, done, metrics = env.step(pred_actions)
 
-            # --- Store transitions predators only ---
-            agent_pred.store_transition(pred_obs, pred_actions, pred_rewards, pred_next_obs)
+            # --- Store predator transitions only ---
+            agent_pred.store_transition(
+                pred_obs, pred_actions, pred_rewards, pred_next_obs
+            )
 
             pred_obs = pred_next_obs
-            # prey_obs n'est pas utilisé pour l'apprentissage (mais on le garde pour compat)
             if hasattr(env, "_get_prey_obs"):
                 prey_obs = env._get_prey_obs()
 
         total_steps += 1
         last_metrics = metrics
-
         ep_pred_reward += float(np.mean(pred_rewards))
 
-        # --- Update networks ---
+        # --- Network updates ---
         if total_steps > WARMUP_STEPS and total_steps % UPDATE_EVERY == 0:
             agent_pred.update()
             if env.prey_mode == "rl":
@@ -173,17 +206,15 @@ for episode in range(EPISODES):
         )
 
 # ------------------------------------------------------------
-# Save models
+# Save trained models
 
 os.makedirs("models", exist_ok=True)
 
-# Sauvegarde toujours le prédateur
 torch.save(
     agent_pred.actor.state_dict(),
     f"models/actor_pred_{EXP_NAME}_{env.prey_mode}.pth"
 )
 
-# Sauvegarde la proie seulement si RL
 if env.prey_mode == "rl":
     torch.save(
         agent_prey.actor.state_dict(),
@@ -196,24 +227,28 @@ if env.prey_mode == "rl":
     print(f" - models/actor_prey_{EXP_NAME}_{env.prey_mode}.pth")
 
 # ------------------------------------------------------------
-# Plotting results
+# Plotting utilities
 
 def rolling_mean(x, w=50):
+    """Compute rolling mean over a window of size w."""
     x = np.asarray(x, dtype=float)
     if len(x) < w:
         return x
     return np.convolve(x, np.ones(w) / w, mode="valid")
 
 def rolling_std(x, w=50):
+    """Compute rolling standard deviation over a window of size w."""
     x = np.asarray(x, dtype=float)
     out = []
     for i in range(w - 1, len(x)):
         out.append(np.std(x[i - w + 1:i + 1]))
     return np.array(out)
 
-W = 50  # fenêtre de lissage (essaie 50 ou 100)
+W = 50  # smoothing window
 
-# --- Rewards predators ---
+# ------------------------------------------------------------
+# Plot predator rewards
+
 r = np.array(rewards_pred_history, dtype=float)
 rm = rolling_mean(r, W)
 rs = rolling_std(r, W)
@@ -234,7 +269,9 @@ plt.savefig(
 )
 plt.show()
 
-# --- Rewards prey (si coevolution) ---
+# ------------------------------------------------------------
+# Plot prey rewards (coevolution only)
+
 if env.prey_mode == "rl":
     r = np.array(rewards_prey_history, dtype=float)
     rm = rolling_mean(r, W)
@@ -249,25 +286,11 @@ if env.prey_mode == "rl":
     plt.ylabel("Reward")
     plt.tight_layout()
     plt.savefig(
-    os.path.join(OUTPUT_DIR,f"prey_reward_{EXP_NAME}_{env.prey_mode}.png"))
+        os.path.join(
+            OUTPUT_DIR,
+            f"prey_reward_{EXP_NAME}_{env.prey_mode}.png"
+        )
+    )
     plt.show()
 
-# --- DoS / DoA ---
-#dos = np.array(DoS_values, dtype=float)
-#doa = np.array(DoA_values, dtype=float)
-
-#dos_m = rolling_mean(dos, W)
-#doa_m = rolling_mean(doa, W)
-#x = np.arange(len(dos_m))
-
-#plt.figure(figsize=(10, 4))
-#plt.plot(x, dos_m, label="DoS (smoothed)")
-#plt.plot(x, doa_m, label="DoA (smoothed)")
-#plt.ylim(0, 1)
-#plt.title("Collective metrics (smoothed)")
-#plt.xlabel("Episode")
-#plt.legend()
-#plt.tight_layout()
-#plt.savefig(os.path.join(OUTPUT_DIR, f"collective_metrics_{EXP_NAME}_{env.prey_mode}.png"))
-#plt.show()
 

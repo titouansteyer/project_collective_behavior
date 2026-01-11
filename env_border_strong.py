@@ -1,15 +1,33 @@
+"""
+env_border_strong.py
+Predator–prey 2D environment with reflective square boundaries.
+This module provides:
+- A geometric reflection helper for positions/velocities in a [0, L] x [0, L] box.
+- A "strong wall" model: Hooke spring + damping when agents penetrate the walls.
+- A PredatorPreyEnvReflect environment class supporting:
+  - Prey behavior via Couzin rules or RL-controlled accelerations.
+  - Predator behavior controlled by RL accelerations.
+  - Predator/prey observations (40-dim vectors).
+  - Rewards with capture events and wall-related penalties.
+  - Collective behavior metrics: Degree of Sparsity (DoS) and Degree of Alignment (DoA).
+"""
+
 import numpy as np
 from metrics import degree_of_sparsity, degree_of_alignment
 
 
-
-
 def reflect_positions_and_velocities(pos, vel, L):
     """
-    Perfect reflection in a square [0, L]x[0, L] using a 2L wrapping technique.
-    Supports multiple bounces in one step.
-    pos, vel: (N, 2) arrays.
-    Returns: (pos_ref, vel_ref) reflecting any out-of-bound positions.
+    Apply perfect geometric reflection inside a square [0, L] x [0, L] using a 2L-period trick.
+    This supports multiple bounces in a single time step.
+
+    Args:
+        pos: (N, 2) array of positions.
+        vel: (N, 2) array of velocities.
+        L: Box size (float).
+
+    Returns:
+        (pos_ref, vel_ref): reflected positions and velocities (both (N, 2)).
     """
     period = 2.0 * L
     tmp = np.mod(pos, period)  # positions in [0, 2L)
@@ -22,51 +40,67 @@ def reflect_positions_and_velocities(pos, vel, L):
     return pos_ref, vel_ref
 
 
-
-
 def wall_force_hooke(pos, vel, L, k=50.0, c=2.0):
     """
-    Physical wall force (Hooke's law + damping):
-    If an agent penetrates the wall, apply a spring force proportional to penetration (stiffness k)
-    and a damping force on the normal component (coefficient c).
-    pos, vel: (N, 2) arrays for positions and velocities.
-    Returns: fb (N, 2) array of bounce forces.
+    Compute a physical wall force (Hooke spring + damping) for a square box.
+
+    If an agent penetrates a wall, apply:
+    - A spring force proportional to penetration depth (stiffness k).
+    - A damping force on the normal velocity component (coefficient c).
+
+    Args:
+        pos: (N, 2) positions (can be out of bounds).
+        vel: (N, 2) velocities.
+        L: Box size (float).
+        k: Wall stiffness (float).
+        c: Wall damping (float).
+
+    Returns:
+        fb: (N, 2) bounce force contributions.
     """
     fb = np.zeros_like(pos)
-    # left wall (x < 0)
+
+    # Left wall (x < 0)
     pen = -pos[:, 0]
     m = pen > 0
     if np.any(m):
         fb[m, 0] += k * pen[m]
         fb[m, 0] += -c * vel[m, 0]
-    # right wall (x > L)
+
+    # Right wall (x > L)
     pen = pos[:, 0] - L
     m = pen > 0
     if np.any(m):
         fb[m, 0] += -k * pen[m]
         fb[m, 0] += -c * vel[m, 0]
-    # bottom wall (y < 0)
+
+    # Bottom wall (y < 0)
     pen = -pos[:, 1]
     m = pen > 0
     if np.any(m):
         fb[m, 1] += k * pen[m]
         fb[m, 1] += -c * vel[m, 1]
-    # top wall (y > L)
+
+    # Top wall (y > L)
     pen = pos[:, 1] - L
     m = pen > 0
     if np.any(m):
         fb[m, 1] += -k * pen[m]
         fb[m, 1] += -c * vel[m, 1]
+
     return fb
+
 
 class PredatorPreyEnvReflect:
     """
-    2D predator–prey environment with REFLECTIVE WALLS (bounded square).
+    2D predator–prey environment with reflective walls (bounded square).
 
-    - Prey: follow Couzin-type rules (repulsion/alignment/attraction) + predator avoidance when not learning.
-    - Predators: controlled by continuous acceleration actions.
-    - Supports co-evolution: prey actions can be provided for learning prey.
-    - Observations: similar 40-dim vectors as toroidal env (for predators by default, and for prey if learning).
+    Key features:
+    - Prey: Couzin-type interaction rules (repulsion/alignment/attraction) OR RL-controlled accelerations.
+    - Predators: RL-controlled continuous accelerations.
+    - Observations: 40-dimensional vectors for predators (and for prey when learning prey).
+    - Rewards: capture rewards/penalties + action costs + wall-related penalties.
+    - Metrics: DoS (degree of sparsity) and DoA (degree of alignment) computed on prey.
     """
 
     def __init__(
@@ -85,17 +119,17 @@ class PredatorPreyEnvReflect:
         r_align: float = 2.0,
         r_attr: float = 6.0,
         k_neighbors: int = 6,
-        # predator avoidance radius:
+        # Predator avoidance radius:
         predator_influence_radius: float = 2.0,
-        # wall parameters:
+        # Wall parameters:
         wall_stiffness: float = 50.0,
         wall_damping: float = 2.0,
-        # reflection
+        # Reflection mode switch:
         pure_reflection: bool = False,
-        # couzin / RL
+        # Couzin / RL switch for prey:
         prey_mode: str = "rl"  # "couzin" or "rl"
-        
     ):
+        """Initialize the environment parameters and reset the state."""
         self.n_prey = n_prey
         self.n_predators = n_predators
         self.world_size = world_size
@@ -122,13 +156,13 @@ class PredatorPreyEnvReflect:
 
         self.reset()
 
-
-
-
-
-
     def reset(self):
-        """Random initialize positions & velocities within [0, L] square."""
+        """
+        Randomly initialize positions and velocities inside the [0, L] square.
+
+        Returns:
+            (pred_obs, prey_obs): initial observations for predators and prey.
+        """
         self.prey_pos = np.random.rand(self.n_prey, 2) * self.world_size
         self.pred_pos = np.random.rand(self.n_predators, 2) * self.world_size
 
@@ -143,17 +177,15 @@ class PredatorPreyEnvReflect:
         pred_obs = self._get_predator_obs()
         prey_obs = self._get_prey_obs()
 
-
-
         return (pred_obs, prey_obs)
-    
-
-
-
 
     def _get_predator_obs(self) -> np.ndarray:
         """
-        Predator observation (40 dims) – same structure as toroidal env (no torus wrapping here).
+        Build predator observations (40 dims each), matching the toroidal env structure
+        but using standard Euclidean distances (no wrapping).
+
+        Returns:
+            (n_predators, 40) array of observations.
         """
         obs_all = []
         for i in range(self.n_predators):
@@ -162,7 +194,8 @@ class PredatorPreyEnvReflect:
             speed = float(np.linalg.norm([vx, vy]) + 1e-8)
             heading = float(np.arctan2(vy, vx + 1e-8))
             own_state = [px, py, speed, heading]
-            # 6 nearest prey (Euclidean distance in box)
+
+            # 6 nearest prey
             diffs_prey = self.prey_pos - self.pred_pos[i]
             dists_prey = np.linalg.norm(diffs_prey, axis=1)
             idx_sorted = np.argsort(dists_prey)
@@ -176,6 +209,7 @@ class PredatorPreyEnvReflect:
                 prey_feat.extend([dx, dy, heading_j])
             while len(prey_feat) < 3 * self.k_neighbors:
                 prey_feat.extend([0.0, 0.0, 0.0])
+
             # 6 nearest predators (excluding self)
             diffs_pred = self.pred_pos - self.pred_pos[i]
             dists_pred = np.linalg.norm(diffs_pred, axis=1)
@@ -191,15 +225,17 @@ class PredatorPreyEnvReflect:
                 pred_feat.extend([dx, dy, heading_j])
             while len(pred_feat) < 3 * self.k_neighbors:
                 pred_feat.extend([0.0, 0.0, 0.0])
+
             obs_all.append(np.array(own_state + prey_feat + pred_feat, dtype=float))
+
         return np.vstack(obs_all)
-
-
-
 
     def _get_prey_obs(self) -> np.ndarray:
         """
-        Prey observation (40 dims) – similar structure for each prey.
+        Build prey observations (40 dims each), using Euclidean distances in the box.
+
+        Returns:
+            (n_prey, 40) array of observations.
         """
         obs_all = []
         for i in range(self.n_prey):
@@ -208,6 +244,7 @@ class PredatorPreyEnvReflect:
             speed = float(np.linalg.norm([vx, vy]) + 1e-8)
             heading = float(np.arctan2(vy, vx + 1e-8))
             own_state = [px, py, speed, heading]
+
             # 6 nearest other prey
             diffs_prey = self.prey_pos - self.prey_pos[i]
             dists_prey = np.linalg.norm(diffs_prey, axis=1)
@@ -223,6 +260,7 @@ class PredatorPreyEnvReflect:
                 prey_feat.extend([dx, dy, heading_j])
             while len(prey_feat) < 3 * self.k_neighbors:
                 prey_feat.extend([0.0, 0.0, 0.0])
+
             # 6 nearest predators
             diffs_pred = self.pred_pos - self.prey_pos[i]
             dists_pred = np.linalg.norm(diffs_pred, axis=1)
@@ -237,31 +275,37 @@ class PredatorPreyEnvReflect:
                 pred_feat.extend([dx, dy, heading_j])
             while len(pred_feat) < 3 * self.k_neighbors:
                 pred_feat.extend([0.0, 0.0, 0.0])
+
             obs_all.append(np.array(own_state + prey_feat + pred_feat, dtype=float))
+
         return np.vstack(obs_all)
-
-
-
 
     def _compute_prey_directions(self) -> np.ndarray:
         """
-        Compute Couzin-rule directions for prey (no torus wrapping, since walls).
+        Compute Couzin-rule heading directions for prey inside a bounded box (no torus wrapping).
+
+        Returns:
+            (n_prey, 2) unit direction vectors.
         """
         N = self.n_prey
         directions = np.zeros_like(self.prey_pos)
+
         for i in range(N):
             pos_i = self.prey_pos[i]
             vel_i = self.prey_vel[i]
-            # distances to other prey (Euclidean)
+
+            # Distances to other prey (Euclidean)
             diffs = self.prey_pos - pos_i
             dists = np.linalg.norm(diffs, axis=1)
             dists[i] = np.inf
+
             # 1) Repulsion
             mask_rep = dists < self.r_rep
             force_rep = np.zeros(2)
             if np.any(mask_rep):
                 vecs = -diffs[mask_rep] / (dists[mask_rep][:, None] + 1e-8)
                 force_rep = np.sum(vecs, axis=0)
+
             # 2) Alignment
             mask_align = (dists >= self.r_rep) & (dists < self.r_align)
             force_align = np.zeros(2)
@@ -269,12 +313,14 @@ class PredatorPreyEnvReflect:
                 v_neighbors = self.prey_vel[mask_align]
                 norms = np.linalg.norm(v_neighbors, axis=1, keepdims=True) + 1e-8
                 force_align = np.sum(v_neighbors / norms, axis=0)
+
             # 3) Attraction
             mask_attr = (dists >= self.r_align) & (dists < self.r_attr)
             force_attr = np.zeros(2)
             if np.any(mask_attr):
                 vecs = diffs[mask_attr] / (dists[mask_attr][:, None] + 1e-8)
                 force_attr = np.sum(vecs, axis=0)
+
             # 4) Predator avoidance
             p_diffs = self.pred_pos - pos_i
             p_dists = np.linalg.norm(p_diffs, axis=1)
@@ -283,34 +329,47 @@ class PredatorPreyEnvReflect:
             if np.any(mask_pred):
                 vecs = -p_diffs[mask_pred] / (p_dists[mask_pred][:, None] + 1e-8)
                 force_pred = np.sum(vecs, axis=0)
-            # combine forces
-            force = (1.2 * force_rep 
-                     + 5.0 * force_align 
-                     + 4.0 * force_attr 
-                     + 1.5 * force_pred)
+
+            # Combine forces
+            force = (
+                1.2 * force_rep
+                + 5.0 * force_align
+                + 4.0 * force_attr
+                + 1.5 * force_pred
+            )
             if np.linalg.norm(force) < 1e-6:
                 force = vel_i
+
             directions[i] = force / (np.linalg.norm(force) + 1e-8)
+
+        # Optional noise on prey directions
         if self.prey_noise_std > 0.0:
             noise = self.prey_noise_std * np.random.randn(self.n_prey, 2)
             directions += noise
             norms = np.linalg.norm(directions, axis=1, keepdims=True) + 1e-8
             directions = directions / norms
+
         return directions
-
-
-
-
 
     def step(self, predator_actions: np.ndarray, prey_actions: np.ndarray = None):
         """
-        One simulation step with reflective wall boundaries.
+        Advance the simulation by one time step using reflective wall boundaries.
+
+        Args:
+            predator_actions: (n_predators, 2) acceleration actions.
+            prey_actions: (n_prey, 2) acceleration actions (required if prey_mode='rl').
+
+        Returns:
+            If prey_mode == "couzin":
+                pred_obs, pred_rewards, done, info
+            Else (prey_mode == "rl"):
+                (pred_obs, prey_obs), (pred_rewards, prey_rewards), done, info
         """
         predator_actions = np.asarray(predator_actions, dtype=float)
         if prey_actions is not None:
             prey_actions = np.asarray(prey_actions, dtype=float)
 
-        #--- Prey update ---
+        # --- Prey update ---
         if self.prey_mode == "couzin":
             new_dirs = self._compute_prey_directions()
             self.prey_vel = self.prey_speed_limit * new_dirs
@@ -327,17 +386,16 @@ class PredatorPreyEnvReflect:
                 self.prey_vel
             )
 
-
-        # compute new prey position (raw)
+        # Compute new prey position (raw)
         prey_pos_raw = self.prey_pos + self.dt * self.prey_vel
 
         if self.pure_reflection:
-            # murs géométriques purs : pas de force murale
+            # Pure geometric walls: no wall forces
             self.prey_pos, self.prey_vel = reflect_positions_and_velocities(
-                    prey_pos_raw, self.prey_vel, self.world_size
+                prey_pos_raw, self.prey_vel, self.world_size
             )
         else:
-            # murs strong : Hooke + damping + reflection
+            # Strong walls: Hooke + damping + reflection
             fb_prey = wall_force_hooke(
                 prey_pos_raw, self.prey_vel, self.world_size,
                 k=self.wall_stiffness, c=self.wall_damping
@@ -345,22 +403,23 @@ class PredatorPreyEnvReflect:
             self.prey_vel = self.prey_vel + self.dt * fb_prey
             self.prey_pos = self.prey_pos + self.dt * self.prey_vel
             self.prey_pos, self.prey_vel = reflect_positions_and_velocities(
-            self.prey_pos, self.prey_vel, self.world_size
-        )
-    
-
+                self.prey_pos, self.prey_vel, self.world_size
+            )
 
         # --- Predators update ---
-        # acceleration & friction
+        # Acceleration & friction
         self.pred_vel += self.dt * predator_actions
         self.pred_vel *= (1.0 - self.friction * self.dt)
-        # clamp predator speed
+
+        # Clamp predator speed
         pred_speed = np.linalg.norm(self.pred_vel, axis=1, keepdims=True) + 1e-8
-        self.pred_vel = np.where(pred_speed > self.pred_speed_limit,
-                                  self.pred_vel * (self.pred_speed_limit / pred_speed),
-                                  self.pred_vel)
-        
-        # compute new predator position (raw)
+        self.pred_vel = np.where(
+            pred_speed > self.pred_speed_limit,
+            self.pred_vel * (self.pred_speed_limit / pred_speed),
+            self.pred_vel
+        )
+
+        # Compute new predator position (raw)
         pred_pos_raw = self.pred_pos + self.dt * self.pred_vel
 
         if self.pure_reflection:
@@ -375,25 +434,21 @@ class PredatorPreyEnvReflect:
             self.pred_vel = self.pred_vel + self.dt * fb_pred
             self.pred_pos = self.pred_pos + self.dt * self.pred_vel
             self.pred_pos, self.pred_vel = reflect_positions_and_velocities(
-            self.pred_pos, self.pred_vel, self.world_size
-        )
-    
-
+                self.pred_pos, self.pred_vel, self.world_size
+            )
 
         # --- Rewards for predators and prey ---
         pred_rewards = np.zeros(self.n_predators)
         prey_rewards = np.zeros(self.n_prey)
 
-        # predator-prey capture events
+        # Predator-prey capture events
         dists = np.linalg.norm(self.pred_pos[:, None, :] - self.prey_pos[None, :, :], axis=2)
         contacts = (dists < self.catch_radius)
 
-        pred_rewards += contacts.sum(axis=1)      # +1 per caught prey
-        prey_rewards -= contacts.sum(axis=0)      # -1 if caught
+        pred_rewards += contacts.sum(axis=1)  # +1 per caught prey
+        prey_rewards -= contacts.sum(axis=0)  # -1 if caught
 
-        # ------------------------------------------------------------
-        # Wall proximity penalty (prey): penalize being close to walls
-        # This prevents "camping" near walls without actually touching them.
+        # Wall proximity penalty (prey): discourage "camping" near walls
         if (not self.pure_reflection) and (prey_actions is not None):
             d = np.minimum.reduce([
                 self.prey_pos[:, 0],
@@ -406,18 +461,16 @@ class PredatorPreyEnvReflect:
             wall_penalty = 0.2 * np.clip((d0 - d) / d0, 0.0, 1.0)
             prey_rewards -= wall_penalty
 
-
-        # small action energy costs
+        # Small action energy costs
         for i in range(self.n_predators):
             pred_rewards[i] -= 0.01 * np.linalg.norm(predator_actions[i])
         if prey_actions is not None:
             for j in range(self.n_prey):
                 prey_rewards[j] -= 0.01 * np.linalg.norm(prey_actions[j])
-        
+
         if not self.pure_reflection:
-        # apply wall-touch penalty: any agent hitting a wall gets -0.1
+            # Wall-touch penalty: any agent that goes out of bounds (raw position) gets -0.1
             if self.n_predators > 0:
-            # check predator raw positions beyond boundaries
                 out_left = pred_pos_raw[:, 0] < 0
                 out_right = pred_pos_raw[:, 0] > self.world_size
                 out_bottom = pred_pos_raw[:, 1] < 0
@@ -426,8 +479,8 @@ class PredatorPreyEnvReflect:
                 for i in range(self.n_predators):
                     if pred_out[i]:
                         pred_rewards[i] -= 0.1
+
             if (not self.pure_reflection) and (prey_actions is not None) and self.n_prey > 0:
-            # check prey raw positions beyond boundaries
                 out_left = prey_pos_raw[:, 0] < 0
                 out_right = prey_pos_raw[:, 0] > self.world_size
                 out_bottom = prey_pos_raw[:, 1] < 0
@@ -437,16 +490,16 @@ class PredatorPreyEnvReflect:
                     if prey_out[j]:
                         prey_rewards[j] -= 0.1
 
-        
-        # collective metrics
+        # Collective metrics (computed on prey)
         dos = degree_of_sparsity(self.prey_pos, world_size=self.world_size)
         doa = degree_of_alignment(self.prey_vel)
         info = {"DoS": dos, "DoA": doa}
         done = False
 
-        # observations for next state
+        # Observations for next state
         pred_obs = self._get_predator_obs()
         prey_obs = self._get_prey_obs()
+
         if self.prey_mode == "couzin":
             return pred_obs, pred_rewards, done, info
         else:

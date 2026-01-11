@@ -1,38 +1,33 @@
-
 """
 baseline_free_motion_visualize_metrics.py
 
-Same as baseline_free_motion_visualize.py (visualize-style pygame rendering + GIF),
-PLUS logs and plots the time evolution of DoS and DoA.
+This script simulates a simple baseline "free motion" model (random turning) for predators and prey,
+renders the simulation using a visualize-style pygame animation, and optionally saves a GIF.
 
-Metrics implementation uses your existing metrics.py:
-- degree_of_sparsity(positions, world_size=world_size)
-- degree_of_alignment(velocities)
+In addition, it computes and logs the time evolution of two metrics:
+- DoS (Degree of Sparsity) using metrics.degree_of_sparsity(positions, world_size=...)
+- DoA (Degree of Alignment) using metrics.degree_of_alignment(velocities)
 
-By default we compute DoS/DoA on PREY only (same spirit as env.py + Li paper).
-Option --all_agents_metrics computes them on all agents (prey + predators).
+By default, metrics are computed on PREY only (consistent with env.py + Li paper spirit).
+Use --all_agents_metrics to compute metrics on all agents (prey + predators).
 
-Run:
+Examples:
     python baseline_free_motion_visualize_metrics.py --mode torus --steps 1500 --n_prey 40 --gif out.gif --plot_metrics
-
-Also save CSV:
     python baseline_free_motion_visualize_metrics.py --gif out.gif --csv metrics.csv --plot_metrics
 """
 
 from __future__ import annotations
-
 import argparse
 import math
 from dataclasses import dataclass
 from typing import Tuple, Optional
-
 import numpy as np
-
 from metrics import degree_of_sparsity, degree_of_alignment
 
 
 @dataclass
 class Config:
+    """Holds all simulation and rendering parameters."""
     n_pred: int = 3
     n_prey: int = 10
     world_size: float = 7.0
@@ -46,17 +41,18 @@ class Config:
     mode: str = "torus"  # torus or walls
     seed: int = 0
 
-    # render like visualize.py
     width: int = 800
     height: int = 800
     fps: int = 25
 
 
 def wrap_torus(pos: np.ndarray, L: float) -> np.ndarray:
+    """Applies periodic boundary conditions on a square torus of size L."""
     return np.mod(pos, L)
 
 
 def reflect_walls(pos: np.ndarray, vel: np.ndarray, L: float) -> Tuple[np.ndarray, np.ndarray]:
+    """Reflects agents on hard walls (0..L) and flips velocity components when they bounce."""
     for axis in (0, 1):
         over = pos[:, axis] > L
         if np.any(over):
@@ -70,6 +66,7 @@ def reflect_walls(pos: np.ndarray, vel: np.ndarray, L: float) -> Tuple[np.ndarra
 
 
 def simulate(cfg: Config) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Runs the baseline random-turn simulation and returns position/velocity trajectories."""
     rng = np.random.default_rng(cfg.seed)
     L = float(cfg.world_size)
     T = int(cfg.steps) + 1
@@ -131,6 +128,7 @@ def compute_metrics_series(
     world_size: float,
     all_agents: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
+    """Computes DoS and DoA over time (either on prey only or on all agents)."""
     T = prey_pos_traj.shape[0]
     dos = np.zeros(T, dtype=float)
     doa = np.zeros(T, dtype=float)
@@ -158,6 +156,7 @@ def make_gif_and_metrics(
     csv_path: Optional[str],
     all_agents_metrics: bool,
 ) -> None:
+    """Simulates, computes metrics, renders frames with pygame, and saves a GIF (plus optional CSV/plots)."""
     import pygame
     import imageio.v2 as imageio
 
@@ -187,6 +186,7 @@ def make_gif_and_metrics(
     clock = pygame.time.Clock()
 
     def w2p(pos):
+        """Converts world coordinates (0..L) to pixel coordinates for rendering."""
         x, y = pos
         scale = WIDTH / L
         px = int(x * scale)
@@ -269,6 +269,7 @@ def make_gif_and_metrics(
 
 
 def parse_args() -> argparse.Namespace:
+    """Parses CLI arguments for simulation, rendering, metrics plotting, and CSV export."""
     p = argparse.ArgumentParser(description="Baseline free motion (visualize-style GIF) + DoS/DoA time series.")
     p.add_argument("--mode", type=str, default="torus", choices=["torus", "walls"])
     p.add_argument("--steps", type=int, default=1500)
@@ -294,6 +295,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Entry point: builds the config from CLI args and runs rendering + metrics export."""
     a = parse_args()
     cfg = Config(
         n_pred=a.n_pred,

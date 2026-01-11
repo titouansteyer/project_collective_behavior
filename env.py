@@ -1,3 +1,18 @@
+"""
+env.py
+
+Toroidal (periodic boundary) predator–prey 2D environment for collective behavior experiments.
+
+This module implements:
+- A prey population that can either follow Couzin-like flocking rules ("couzin") or be RL-controlled ("rl").
+- Predator agents controlled by continuous acceleration actions (ax, ay).
+- Toroidal distance handling (minimal image convention via wrapping diffs).
+- Reward based on predator-prey contacts (capture radius), without prey respawn.
+- Collective behavior metrics computed on prey:
+  - Degree of Sparsity (DoS)
+  - Degree of Alignment (DoA)
+"""
+
 import numpy as np
 from metrics import degree_of_sparsity, degree_of_alignment
 
@@ -13,7 +28,7 @@ class PredatorPreyEnv:
         * "couzin": fixed flocking rules (no RL actions needed)
         * "rl": controlled by actions (coevolution)
 
-    IMPORTANT CHANGE (to match env_border_strong behaviour):
+    IMPORTANT CHANGE (to match env_border_strong behavior):
     - No prey respawn on contact anymore (predators can touch prey, nothing is reset/moved).
       Contacts still give rewards/penalties.
     """
@@ -34,10 +49,11 @@ class PredatorPreyEnv:
         r_align: float = 2.0,
         r_attr: float = 6.0,
         k_neighbors: int = 6,
-        # predator avoidance radius for prey:
+        # Predator avoidance radius for prey:
         predator_influence_radius: float = 2.0,
         prey_mode: str = "couzin",  # "couzin" or "rl"
     ):
+        """Initialize environment parameters and allocate internal state."""
         self.n_prey = n_prey
         self.n_predators = n_predators
         self.world_size = world_size
@@ -54,7 +70,7 @@ class PredatorPreyEnv:
         self.k_neighbors = k_neighbors
         self.predator_influence_radius = predator_influence_radius
 
-        # (unused) global perception radius set equal to world_size
+        # (Unused) global perception radius set equal to world_size (kept for consistency)
         self.perception_radius = world_size
 
         assert prey_mode in ["couzin", "rl"], "prey_mode must be 'couzin' or 'rl'"
@@ -63,7 +79,12 @@ class PredatorPreyEnv:
         self.reset()
 
     def reset(self):
-        """Randomly initialize positions and velocities of all agents."""
+        """
+        Randomly initialize positions and velocities of all agents on the torus.
+
+        Returns:
+            (pred_obs, prey_obs): initial observations for predators and prey.
+        """
         self.prey_pos = np.random.rand(self.n_prey, 2) * self.world_size
         self.pred_pos = np.random.rand(self.n_predators, 2) * self.world_size
 
@@ -80,7 +101,12 @@ class PredatorPreyEnv:
         return (pred_obs, prey_obs)
 
     def _get_predator_obs(self) -> np.ndarray:
-        """Predator obs: (n_predators, 40) using torus diffs."""
+        """
+        Build predator observations (n_predators, 40) using torus-wrapped relative vectors.
+
+        Returns:
+            Predator observation array of shape (n_predators, 40).
+        """
         obs_all = []
         for i in range(self.n_predators):
             px, py = self.pred_pos[i]
@@ -89,7 +115,7 @@ class PredatorPreyEnv:
             heading = float(np.arctan2(vy, vx + 1e-8))
             own_state = [px, py, speed, heading]
 
-            # nearest prey (torus)
+            # Nearest prey (using minimal-image torus diffs)
             diffs_prey = self.prey_pos - self.pred_pos[i]
             diffs_prey -= np.round(diffs_prey / self.world_size) * self.world_size
             dists_prey = np.linalg.norm(diffs_prey, axis=1)
@@ -105,7 +131,7 @@ class PredatorPreyEnv:
             while len(prey_feat) < 3 * self.k_neighbors:
                 prey_feat.extend([0.0, 0.0, 0.0])
 
-            # nearest predators (excluding self)
+            # Nearest predators (excluding self)
             diffs_pred = self.pred_pos - self.pred_pos[i]
             diffs_pred -= np.round(diffs_pred / self.world_size) * self.world_size
             dists_pred = np.linalg.norm(diffs_pred, axis=1)
@@ -126,7 +152,12 @@ class PredatorPreyEnv:
         return np.vstack(obs_all)
 
     def _get_prey_obs(self) -> np.ndarray:
-        """Prey obs: (n_prey, 40) using torus diffs."""
+        """
+        Build prey observations (n_prey, 40) using torus-wrapped relative vectors.
+
+        Returns:
+            Prey observation array of shape (n_prey, 40).
+        """
         obs_all = []
         for i in range(self.n_prey):
             px, py = self.prey_pos[i]
@@ -135,7 +166,7 @@ class PredatorPreyEnv:
             heading = float(np.arctan2(vy, vx + 1e-8))
             own_state = [px, py, speed, heading]
 
-            # nearest other prey
+            # Nearest other prey
             diffs_prey = self.prey_pos - self.prey_pos[i]
             diffs_prey -= np.round(diffs_prey / self.world_size) * self.world_size
             dists_prey = np.linalg.norm(diffs_prey, axis=1)
@@ -152,7 +183,7 @@ class PredatorPreyEnv:
             while len(prey_feat) < 3 * self.k_neighbors:
                 prey_feat.extend([0.0, 0.0, 0.0])
 
-            # nearest predators
+            # Nearest predators
             diffs_pred = self.pred_pos - self.prey_pos[i]
             diffs_pred -= np.round(diffs_pred / self.world_size) * self.world_size
             dists_pred = np.linalg.norm(diffs_pred, axis=1)
@@ -172,7 +203,13 @@ class PredatorPreyEnv:
         return np.vstack(obs_all)
 
     def _compute_prey_directions(self) -> np.ndarray:
-        """Couzin-like rules + predator avoidance on torus."""
+        """
+        Compute Couzin-like desired directions for prey on the torus,
+        including predator avoidance (minimal-image torus distances).
+
+        Returns:
+            (n_prey, 2) array of unit direction vectors.
+        """
         N = self.n_prey
         directions = np.zeros_like(self.prey_pos)
         for i in range(N):
@@ -184,12 +221,14 @@ class PredatorPreyEnv:
             dists = np.linalg.norm(diffs, axis=1)
             dists[i] = np.inf
 
+            # 1) Repulsion
             mask_rep = dists < self.r_rep
             force_rep = np.zeros(2)
             if np.any(mask_rep):
                 vecs = -diffs[mask_rep] / (dists[mask_rep][:, None] + 1e-8)
                 force_rep = np.sum(vecs, axis=0)
 
+            # 2) Alignment
             mask_align = (dists >= self.r_rep) & (dists < self.r_align)
             force_align = np.zeros(2)
             if np.any(mask_align):
@@ -197,12 +236,14 @@ class PredatorPreyEnv:
                 norms = np.linalg.norm(v_neighbors, axis=1, keepdims=True) + 1e-8
                 force_align = np.sum(v_neighbors / norms, axis=0)
 
+            # 3) Attraction
             mask_attr = (dists >= self.r_align) & (dists < self.r_attr)
             force_attr = np.zeros(2)
             if np.any(mask_attr):
                 vecs = diffs[mask_attr] / (dists[mask_attr][:, None] + 1e-8)
                 force_attr = np.sum(vecs, axis=0)
 
+            # 4) Predator avoidance
             p_diffs = self.pred_pos - pos_i
             p_diffs -= np.round(p_diffs / self.world_size) * self.world_size
             p_dists = np.linalg.norm(p_diffs, axis=1)
@@ -212,6 +253,7 @@ class PredatorPreyEnv:
                 vecs = -p_diffs[mask_pred] / (p_dists[mask_pred][:, None] + 1e-8)
                 force_pred = np.sum(vecs, axis=0)
 
+            # Combine forces (weights kept as-is)
             force = (
                 1.2 * force_rep +
                 5.0 * force_align +
@@ -223,6 +265,7 @@ class PredatorPreyEnv:
                 force = vel_i
             directions[i] = force / (np.linalg.norm(force) + 1e-8)
 
+        # Optional noise on directions
         if self.prey_noise_std > 0.0:
             noise = self.prey_noise_std * np.random.randn(self.n_prey, 2)
             directions += noise
@@ -232,15 +275,16 @@ class PredatorPreyEnv:
 
     def step(self, predator_actions: np.ndarray, prey_actions: np.ndarray = None):
         """
-        Step on torus.
+        Perform one simulation step on the torus.
 
-        - If prey_mode == "couzin": ignores prey_actions and returns predators-only API:
+        API:
+        - If prey_mode == "couzin": ignores prey_actions and returns:
               pred_obs, pred_rewards, done, info
-        - If prey_mode == "rl": requires prey_actions and returns coevolution API:
+        - If prey_mode == "rl": requires prey_actions and returns:
               (pred_obs, prey_obs), (pred_rewards, prey_rewards), done, info
 
-        IMPORTANT CHANGE:
-        - No prey respawn on contact.
+        IMPORTANT:
+        - No prey respawn on contact (contacts only affect rewards).
         """
         predator_actions = np.asarray(predator_actions, dtype=float)
         if prey_actions is not None:
@@ -262,6 +306,7 @@ class PredatorPreyEnv:
                 self.prey_vel
             )
 
+        # Toroidal position update
         self.prey_pos = (self.prey_pos + self.dt * self.prey_vel) % self.world_size
 
         # --- Predator update ---
@@ -273,6 +318,8 @@ class PredatorPreyEnv:
             self.pred_vel * (self.pred_speed_limit / pred_speed),
             self.pred_vel
         )
+
+        # Toroidal position update
         self.pred_pos = (self.pred_pos + self.dt * self.pred_vel) % self.world_size
 
         # --- Rewards ---
@@ -285,13 +332,14 @@ class PredatorPreyEnv:
         pred_rewards += contacts.sum(axis=1)
         prey_rewards -= contacts.sum(axis=0)
 
+        # Action energy costs
         for i in range(self.n_predators):
             pred_rewards[i] -= 0.01 * np.linalg.norm(predator_actions[i])
         if prey_actions is not None:
             for j in range(self.n_prey):
                 prey_rewards[j] -= 0.01 * np.linalg.norm(prey_actions[j])
 
-        # --- Metrics ---
+        # --- Metrics (computed on prey) ---
         dos = degree_of_sparsity(self.prey_pos, world_size=self.world_size)
         doa = degree_of_alignment(self.prey_vel)
         info = {"DoS": dos, "DoA": doa}

@@ -1,12 +1,30 @@
+"""
+compare.py
+
+Evaluation and comparison script for predator policies trained in two environments:
+- Toroidal world (periodic boundaries)
+- Bounded world with strong reflective walls
+
+This script:
+- Loads trained MADDPG predator (and optionally prey) policies
+- Runs multiple evaluation episodes without exploration noise
+- Computes average predator reward, Degree of Sparsity (DoS), and Degree of Alignment (DoA)
+- Prints summary statistics and differences between environments
+
+Model naming is consistent with train.py / visualize.py:
+- models/actor_pred_{MODE}_{PREY_MODE}.pth
+- models/actor_prey_{MODE}_{PREY_MODE}.pth (only if PREY_MODE == "rl")
+"""
+
 import numpy as np
 import torch
 
 from maddpg import MADDPGAgent
 from env import PredatorPreyEnv as EnvTorus
-from env_border_strong import PredatorPreyEnvReflect as EnvWalls  # walls strong (comme tu veux le garder)
+from env_border_strong import PredatorPreyEnvReflect as EnvWalls  # strong walls version
 
 # ------------------------------------------------------------
-# Dimensions / config
+# Dimensions / configuration
 
 STATE_DIM = 40
 ACTION_DIM = 2
@@ -18,29 +36,32 @@ WORLD_SIZE = 7.0
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ------------------------------------------------------------
-# Eval params
+# Evaluation parameters
 
-K_EPISODES = 100      # nb d'épisodes pour stats
-T_STEPS = 200         # steps par épisode
-NOISE = 0.0           # eval sans exploration
-ACTION_SCALE = 0.3    # comme visualize.py
+K_EPISODES = 100      # number of episodes for statistics
+T_STEPS = 200         # steps per episode
+NOISE = 0.0           # no exploration noise during evaluation
+ACTION_SCALE = 0.3    # same scaling as visualize.py
 SEED0 = 123
 
 # ------------------------------------------------------------
-# Model paths (IMPORTANT: deux modèles différents)
+# Model selection (CONSISTENT WITH train.py / visualize.py)
 
-ACTOR_PRED_TORUS_PATH = "models/actor_pred_torus.pth"
-ACTOR_PRED_WALLS_PATH = "models/actor_pred_walls.pth"
+PREY_MODE = "rl"      # "rl" or "couzin"
 
-# (Optionnel) si tu veux aussi évaluer une policy proie apprise
-ACTOR_PREY_TORUS_PATH = "models/actor_prey_torus.pth"
-ACTOR_PREY_WALLS_PATH = "models/actor_prey_walls.pth"
+ACTOR_PRED_TORUS_PATH = f"models/actor_pred_torus_{PREY_MODE}.pth"
+ACTOR_PRED_WALLS_PATH = f"models/actor_pred_walls_{PREY_MODE}.pth"
+
+# Only used if PREY_MODE == "rl"
+ACTOR_PREY_TORUS_PATH = f"models/actor_prey_torus_{PREY_MODE}.pth"
+ACTOR_PREY_WALLS_PATH = f"models/actor_prey_walls_{PREY_MODE}.pth"
 
 
 # ------------------------------------------------------------
-# Utils
+# Utility functions
 
 def set_seed(seed: int):
+    """Set random seeds for NumPy and PyTorch (CPU and GPU) for reproducibility."""
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
@@ -49,9 +70,14 @@ def set_seed(seed: int):
 
 def safe_reset(env):
     """
-    Supporte:
+    Reset environment with compatibility for different reset signatures.
+
+    Supports:
     - reset() -> pred_obs
     - reset() -> (pred_obs, prey_obs)
+
+    Returns:
+        pred_obs, prey_obs (prey_obs can be None)
     """
     out = env.reset()
     if isinstance(out, tuple) and len(out) == 2:
@@ -61,44 +87,57 @@ def safe_reset(env):
 
 def safe_step(env, pred_actions, prey_actions=None):
     """
-    Supporte:
-    - step(pred_actions) -> pred_next_obs, pred_rewards, done, info
-    - step(pred_actions, prey_actions) -> (pred_next_obs, prey_next_obs), (pred_rewards, prey_rewards), done, info
+    Step environment with compatibility for predator-only or predator+prey modes.
+
+    Supports:
+    - step(pred_actions)
+    - step(pred_actions, prey_actions)
+
+    Returns:
+        pred_next_obs, prey_next_obs, pred_rewards, prey_rewards, done, info
     """
     if prey_actions is None:
         pred_next_obs, pred_rewards, done, info = env.step(pred_actions)
         return pred_next_obs, None, pred_rewards, None, done, info
     else:
-        (pred_next_obs, prey_next_obs), (pred_rewards, prey_rewards), done, info = env.step(pred_actions, prey_actions)
+        (pred_next_obs, prey_next_obs), (pred_rewards, prey_rewards), done, info = env.step(
+            pred_actions, prey_actions
+        )
         return pred_next_obs, prey_next_obs, pred_rewards, prey_rewards, done, info
 
 
 def load_agent(actor_path, n_agents):
+    """
+    Load a MADDPG agent and its actor network from disk.
+    """
     agent = MADDPGAgent(
         state_dim=STATE_DIM,
         action_dim=ACTION_DIM,
         n_agents=n_agents,
         device=DEVICE
     )
-    agent.actor.load_state_dict(torch.load(actor_path, map_location=DEVICE))
+    agent.actor.load_state_dict(torch.load(actor_path, map_location=DEVICE, weights_only=True))
     agent.actor.eval()
     return agent
 
 
 def run_eval(env_class, actor_pred_path, use_prey_policy=False, actor_prey_path=None):
     """
-    Évalue une policy (prédateurs, et optionnellement proies) sur un env.
-    - use_prey_policy=False: on n'envoie pas de prey_actions (proies "scriptées" côté env)
-    - use_prey_policy=True : on charge actor_prey_path et on envoie prey_actions
+    Evaluate predator (and optionally prey) policies in a given environment.
     """
-    env = env_class(n_prey=N_PREYS, n_predators=N_PREDATORS, world_size=WORLD_SIZE)
+    env = env_class(
+        n_prey=N_PREYS,
+        n_predators=N_PREDATORS,
+        world_size=WORLD_SIZE,
+        prey_mode=("rl" if use_prey_policy else "couzin"),
+    )
 
     agent_pred = load_agent(actor_pred_path, n_agents=N_PREDATORS)
 
     agent_prey = None
     if use_prey_policy:
         if actor_prey_path is None:
-            raise ValueError("use_prey_policy=True mais actor_prey_path=None")
+            raise ValueError("use_prey_policy=True but actor_prey_path=None")
         agent_prey = load_agent(actor_prey_path, n_agents=N_PREYS)
 
     ep_pred_reward = []
@@ -117,17 +156,15 @@ def run_eval(env_class, actor_pred_path, use_prey_policy=False, actor_prey_path=
         doa_list = []
 
         for _ in range(T_STEPS):
-            # --- predator actions ---
             pred_actions = np.zeros((N_PREDATORS, ACTION_DIM))
             for i in range(N_PREDATORS):
                 a = agent_pred.select_action(pred_obs[i], noise_scale=NOISE)
                 pred_actions[i] = ACTION_SCALE * a
 
-            # --- prey actions (optionnel) ---
             prey_actions = None
             if use_prey_policy:
                 if prey_obs is None:
-                    raise RuntimeError("use_prey_policy=True mais env.reset() ne renvoie pas prey_obs.")
+                    raise RuntimeError("use_prey_policy=True but prey_obs is None")
                 prey_actions = np.zeros((N_PREYS, ACTION_DIM))
                 for j in range(N_PREYS):
                     a = agent_prey.select_action(prey_obs[j], noise_scale=NOISE)
@@ -169,11 +206,13 @@ def run_eval(env_class, actor_pred_path, use_prey_policy=False, actor_prey_path=
 
 
 def summarize(arr):
+    """Compute mean and standard deviation, ignoring NaNs."""
     arr = np.asarray(arr, dtype=float)
     return float(np.nanmean(arr)), float(np.nanstd(arr))
 
 
 def print_block(title, dct, has_prey=False):
+    """Print a formatted summary block of evaluation statistics."""
     print(f"\n=== {title} ===")
     m, s = summarize(dct["pred_reward"])
     print(f"Pred reward : mean={m:.4f}  std={s:.4f}")
@@ -187,12 +226,13 @@ def print_block(title, dct, has_prey=False):
 
 
 # ------------------------------------------------------------
-# Main
+# Main script
 
 if __name__ == "__main__":
-    # Comparaison "propre" de base: prédateurs seulement
-    USE_PREY_POLICY = False
+    # Base comparison: predator policies only, unless PREY_MODE == "rl"
+    USE_PREY_POLICY = (PREY_MODE == "rl")
 
+    print("PREY_MODE =", PREY_MODE)
     print("Using TORUS model:", ACTOR_PRED_TORUS_PATH)
     print("Using WALLS model:", ACTOR_PRED_WALLS_PATH)
     if USE_PREY_POLICY:
